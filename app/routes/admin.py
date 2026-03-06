@@ -10,10 +10,21 @@ from app.models import Asistencia
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
+def can_access_admin() -> bool:
+    return (
+        current_user.is_authenticated
+        and (
+            current_user.has_role("SUPERADMIN")
+            or current_user.has_role("ADMIN")
+            or current_user.has_role("PROFESOR")
+        )
+    )
+
+
 @admin_bp.route("/")
 @login_required
 def dashboard():
-    if not current_user.has_role("ADMIN") and not current_user.has_role("PROFESOR"):
+    if not can_access_admin():
         abort(403)
 
     total_alumnos = Alumno.query.count()
@@ -264,7 +275,7 @@ def asignar_sucursal(user_id):
 @admin_bp.route("/asistencias", methods=["GET"])
 @login_required
 def asistencias():
-    if not current_user.has_role("ADMIN") and not current_user.has_role("PROFESOR"):
+    if not (current_user.has_role("SUPERADMIN") or current_user.has_role("ADMIN") or current_user.has_role("PROFESOR")):
         abort(403)
 
     # fecha filtro
@@ -312,7 +323,7 @@ def asistencias():
 @admin_bp.route("/asistencias/guardar", methods=["POST"])
 @login_required
 def asistencias_guardar():
-    if not current_user.has_role("ADMIN") and not current_user.has_role("PROFESOR"):
+    if not (current_user.has_role("SUPERADMIN") or current_user.has_role("ADMIN") or current_user.has_role("PROFESOR")):
         abort(403)
 
     fecha = datetime.strptime(request.form["fecha"], "%Y-%m-%d").date()

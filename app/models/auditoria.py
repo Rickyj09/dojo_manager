@@ -1,7 +1,8 @@
 from app import db
 from datetime import datetime
+from app.models.mixins import TenantMixin
 
-class Auditoria(db.Model):
+class Auditoria(TenantMixin, db.Model):
     __tablename__ = 'auditoria'
 
     id = db.Column(db.Integer, primary_key=True)

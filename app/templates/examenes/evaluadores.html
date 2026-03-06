@@ -1,0 +1,82 @@
+{% extends "base_admin.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h3 class="mb-0">Evaluadores — Examen #{{ examen.id }}</h3>
+    <div class="text-muted">{{ examen.disciplina }} | {{ examen.fecha }} | Estado: {{ examen.estado }}</div>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('examenes.editar', examen_id=examen.id) }}">Volver</a>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="post" class="row g-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="add">
+
+      <div class="col-md-6">
+        <label class="form-label">Usuario</label>
+        <select class="form-select" name="user_id" required>
+          <option value="">-- Selecciona --</option>
+          {% for u in users %}
+            <option value="{{ u.id }}">{{ u.username }} ({{ u.email }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">Rol</label>
+        <select class="form-select" name="rol">
+          <option value="AUXILIAR">AUXILIAR</option>
+          <option value="PRINCIPAL">PRINCIPAL</option>
+        </select>
+      </div>
+
+      <div class="col-md-3 d-flex align-items-end">
+        <button class="btn btn-success w-100" type="submit">Asignar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <h5 class="mb-3">Asignados</h5>
+
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th>Usuario</th>
+            <th>Email</th>
+            <th>Rol</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in asignados %}
+            {% set u = users|selectattr("id", "equalto", a.user_id)|list|first %}
+            <tr>
+              <td>{{ u.username if u else a.user_id }}</td>
+              <td>{{ u.email if u else '-' }}</td>
+              <td><span class="badge text-bg-secondary">{{ a.rol }}</span></td>
+              <td class="text-end">
+                <form method="post" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="action" value="remove">
+                  <input type="hidden" name="user_id" value="{{ a.user_id }}">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Quitar</button>
+                </form>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="4" class="text-center text-muted py-3">No hay evaluadores asignados.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,259 @@
+{% extends "base_admin.html" %}
+{% block title %}Inscripciones{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h3 class="mb-0">Inscripciones</h3>
+    <div class="text-muted small">
+      Examen #{{ examen.id }} · {{ examen.disciplina }} · {{ examen.fecha }} · Estado: <b>{{ examen.estado }}</b>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2 flex-wrap">
+    <a class="btn btn-outline-secondary" href="{{ url_for('examenes.editar', examen_id=examen.id) }}">
+      <i class="bi bi-arrow-left"></i> Volver a editar
+    </a>
+
+    <a class="btn btn-outline-dark" href="{{ url_for('examenes.resultados', examen_id=examen.id) }}">
+      <i class="bi bi-bar-chart-line"></i> Resultados
+    </a>
+
+    <a class="btn btn-outline-danger"
+       href="{{ url_for('examenes.acta_pdf', examen_id=examen.id) }}"
+       target="_blank">
+      <i class="bi bi-file-earmark-pdf"></i> Acta PDF
+    </a>
+
+    {% if inscripciones|length > 0 %}
+    <form method="post" action="{{ url_for('examenes.iniciar_evaluacion', examen_id=examen.id) }}" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-primary" type="submit"
+              onclick="return confirm('Se generarán evaluaciones y preguntas para los inscritos. ¿Continuar?');">
+        <i class="bi bi-play-circle"></i> Iniciar evaluación
+      </button>
+    </form>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('examenes.cerrar_examen', examen_id=examen.id) }}" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-dark" type="submit"
+              onclick="return confirm('¿Cerrar y publicar este examen?');">
+        <i class="bi bi-lock"></i> Cerrar examen
+      </button>
+    </form>
+  </div>
+</div>
+
+<div class="row g-3">
+
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-header bg-light">
+        <b>Alumnos disponibles</b>
+      </div>
+
+      <div class="card-body">
+
+        <form method="get" class="row g-2 mb-3">
+          <div class="col-md-8">
+            <input class="form-control"
+                   name="q"
+                   value="{{ q or '' }}"
+                   placeholder="Buscar por apellidos, nombres o cédula">
+          </div>
+          <div class="col-md-4 d-flex gap-2">
+            <button class="btn btn-primary w-100" type="submit">
+              <i class="bi bi-search"></i> Buscar
+            </button>
+            <a class="btn btn-outline-secondary w-100"
+               href="{{ url_for('examenes.inscripciones', examen_id=examen.id) }}">
+              Limpiar
+            </a>
+          </div>
+        </form>
+
+        <form method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="add_bulk">
+          <input type="hidden" name="alumno_id" value="">
+
+          <div class="table-responsive" style="max-height: 420px; overflow:auto;">
+            <table class="table table-sm table-hover align-middle">
+              <thead class="table-dark">
+                <tr>
+                  <th style="width:36px;"></th>
+                  <th>Cédula</th>
+                  <th>Alumno</th>
+                  <th>Grado</th>
+                  <th>Sucursal</th>
+                  <th style="width:60px;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for a in alumnos %}
+                <tr>
+                  <td>
+                    <input class="form-check-input" type="checkbox" name="alumno_ids" value="{{ a.id }}">
+                  </td>
+                  <td>{{ a.numero_identidad or "-" }}</td>
+                  <td>{{ a.apellidos }} {{ a.nombres }}</td>
+                  <td>
+                    {% if a.grado_id %}
+                      {{ grados_map.get(a.grado_id).nombre if grados_map.get(a.grado_id) else ('#' ~ a.grado_id) }}
+                    {% else %}
+                      <span class="text-warning">Sin grado</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ a.sucursal_id or "-" }}</td>
+                  <td class="text-end">
+                    {% if examen.estado in ('BORRADOR', 'ABIERTO') %}
+                    <button class="btn btn-sm btn-success"
+                            name="action"
+                            value="add_one"
+                            formaction="{{ url_for('examenes.inscripciones', examen_id=examen.id) }}"
+                            formmethod="post"
+                            type="submit"
+                            onclick="this.form.alumno_id.value='{{ a.id }}'">
+                      <i class="bi bi-plus-circle"></i>
+                    </button>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+
+                {% if alumnos|length == 0 %}
+                <tr>
+                  <td colspan="6" class="text-center text-muted py-3">
+                    No se encontraron alumnos disponibles.
+                  </td>
+                </tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="d-flex justify-content-between mt-3 flex-wrap gap-2">
+            <div class="text-muted small">
+              Tip: puedes seleccionar varios y luego “Inscribir seleccionados”.
+            </div>
+
+            {% if examen.estado in ('BORRADOR', 'ABIERTO') %}
+            <button class="btn btn-success" type="submit">
+              <i class="bi bi-check2-square"></i> Inscribir seleccionados
+            </button>
+            {% endif %}
+          </div>
+        </form>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-header bg-light d-flex justify-content-between align-items-center">
+        <b>Inscritos</b>
+        <span class="badge bg-primary">{{ inscripciones|length }}</span>
+      </div>
+
+      <div class="card-body">
+        <div class="table-responsive" style="max-height: 520px; overflow:auto;">
+          <table class="table table-sm align-middle">
+            <thead class="table-dark">
+              <tr>
+                <th>Alumno</th>
+                <th>Actual</th>
+                <th>Objetivo</th>
+                <th>Estado</th>
+                <th>Nota</th>
+                <th style="width:120px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for i in inscripciones %}
+              <tr>
+                <td>
+                  {% if i.alumno %}
+                    {{ i.alumno.apellidos }} {{ i.alumno.nombres }}
+                    <div class="small text-muted">{{ i.alumno.numero_identidad or ('#' ~ i.alumno_id) }}</div>
+                  {% else %}
+                    #{{ i.alumno_id }}
+                  {% endif %}
+                </td>
+
+                <td>
+                  {{ grados_map.get(i.grado_actual_id).nombre if grados_map.get(i.grado_actual_id) else ('#' ~ i.grado_actual_id) }}
+                </td>
+
+                <td>
+                  {{ grados_map.get(i.grado_objetivo_id).nombre if grados_map.get(i.grado_objetivo_id) else ('#' ~ i.grado_objetivo_id) }}
+                </td>
+
+                <td>
+                  {% if i.estado == 'PROMOVIDO' %}
+                    <span class="badge bg-success">{{ i.estado }}</span>
+                  {% elif i.estado == 'APROBADO' %}
+                    <span class="badge bg-success">{{ i.estado }}</span>
+                  {% elif i.estado == 'REPROBADO' %}
+                    <span class="badge bg-danger">{{ i.estado }}</span>
+                  {% elif i.estado == 'EVALUADO' %}
+                    <span class="badge bg-info text-dark">{{ i.estado }}</span>
+                  {% else %}
+                    <span class="badge text-bg-secondary">{{ i.estado }}</span>
+                  {% endif %}
+                </td>
+
+                <td>
+                  <strong>{{ '%.2f'|format((i.nota_final or 0)|float) }}</strong>
+                </td>
+
+                <td class="text-end">
+                  <a class="btn btn-sm btn-outline-primary"
+                     href="{{ url_for('examenes.evaluar_alumno', examen_id=examen.id, inscripcion_id=i.id) }}"
+                     title="Evaluar">
+                    <i class="bi bi-pencil-square"></i>
+                  </a>
+
+                  {% if examen.estado in ('BORRADOR', 'ABIERTO') %}
+                  <form method="post" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="remove">
+                    <input type="hidden" name="inscripcion_id" value="{{ i.id }}">
+                    <button class="btn btn-sm btn-outline-danger"
+                            type="submit"
+                            title="Quitar inscripción"
+                            onclick="return confirm('¿Quitar inscripción?');">
+                      <i class="bi bi-x-circle"></i>
+                    </button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+
+              {% if inscripciones|length == 0 %}
+              <tr>
+                <td colspan="6" class="text-muted text-center py-3">
+                  Aún no hay inscritos.
+                </td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+
+        <hr>
+
+        <div class="alert alert-info mb-0">
+          <b>Snapshot:</b> al inscribir guardamos el grado actual del alumno y el grado objetivo del examen.
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

@@ -1,6 +1,7 @@
 from app.extensions import db
+from app.models.mixins import TenantMixin
 
-class Grado(db.Model):
+class Grado(TenantMixin,db.Model):
     __tablename__ = "grados"
 
     id = db.Column(db.Integer, primary_key=True)

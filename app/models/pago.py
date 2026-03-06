@@ -1,8 +1,11 @@
 from app.extensions import db
 from datetime import date
+from app.models.mixins import TenantMixin
 
-class Pago(db.Model):
+class Pago(TenantMixin,db.Model):
     __tablename__ = "pagos"
+
+
 
     id = db.Column(db.Integer, primary_key=True)
 
@@ -32,3 +35,6 @@ class Pago(db.Model):
     # Relaciones
     alumno = db.relationship("Alumno", backref="pagos")
     sucursal = db.relationship("Sucursal", backref="pagos")
+    __table_args__ = (
+    db.UniqueConstraint("academia_id", "alumno_id", "anio", "mes", name="uq_pago_tenant_alumno_anio_mes"),
+    )

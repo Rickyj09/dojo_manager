@@ -1,0 +1,112 @@
+{% extends "base_admin.html" %}
+{% block title %}Banco de preguntas{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h3 class="mb-0">Banco de preguntas</h3>
+    <div class="text-muted small">Administración de preguntas por grado y disciplina</div>
+  </div>
+  <a class="btn btn-primary" href="{{ url_for('banco_preguntas.nuevo') }}">
+    <i class="bi bi-plus-circle"></i> Nueva pregunta
+  </a>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="get" class="row g-2">
+      <div class="col-md-3">
+        <input class="form-control" name="texto" value="{{ filtros.texto or '' }}" placeholder="Buscar en enunciado">
+      </div>
+
+      <div class="col-md-2">
+        <input class="form-control" name="disciplina" value="{{ filtros.disciplina or '' }}" placeholder="Disciplina">
+      </div>
+
+      <div class="col-md-2">
+        <select class="form-select" name="tipo">
+          <option value="">-- Tipo --</option>
+          <option value="OPCION_MULTIPLE" {% if filtros.tipo=='OPCION_MULTIPLE' %}selected{% endif %}>OPCION_MULTIPLE</option>
+          <option value="VERDADERO_FALSO" {% if filtros.tipo=='VERDADERO_FALSO' %}selected{% endif %}>VERDADERO_FALSO</option>
+          <option value="ABIERTA" {% if filtros.tipo=='ABIERTA' %}selected{% endif %}>ABIERTA</option>
+        </select>
+      </div>
+
+      <div class="col-md-3">
+        <select class="form-select" name="grado_id">
+          <option value="">-- Grado --</option>
+          {% for g in grados %}
+            <option value="{{ g.id }}" {% if filtros.grado_id==g.id %}selected{% endif %}>{{ g.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-2 d-flex gap-2">
+        <button class="btn btn-outline-primary w-100" type="submit">Filtrar</button>
+        <a class="btn btn-outline-secondary w-100" href="{{ url_for('banco_preguntas.list') }}">Limpiar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead class="table-dark">
+          <tr>
+            <th>ID</th>
+            <th>Disciplina</th>
+            <th>Grado</th>
+            <th>Tipo</th>
+            <th>Enunciado</th>
+            <th>Puntaje</th>
+            <th>Activo</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for i in items %}
+          <tr>
+            <td>{{ i.id }}</td>
+            <td>{{ i.disciplina }}</td>
+            <td>{{ grados_map.get(i.grado_id).nombre if grados_map.get(i.grado_id) else i.grado_id }}</td>
+            <td>{{ i.tipo }}</td>
+            <td>{{ i.enunciado }}</td>
+            <td>{{ i.puntaje_max }}</td>
+            <td>
+              {% if i.activo %}
+                <span class="badge bg-success">Sí</span>
+              {% else %}
+                <span class="badge bg-secondary">No</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('banco_preguntas.editar', pregunta_id=i.id) }}">
+                <i class="bi bi-pencil"></i>
+              </a>
+
+              <a class="btn btn-sm btn-outline-dark" href="{{ url_for('banco_preguntas.opciones', pregunta_id=i.id) }}">
+                <i class="bi bi-list-check"></i>
+              </a>
+
+              <form method="post" action="{{ url_for('banco_preguntas.eliminar', pregunta_id=i.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-outline-danger" type="submit"
+                        onclick="return confirm('¿Eliminar esta pregunta?');">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="8" class="text-center text-muted py-3">No hay preguntas registradas.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

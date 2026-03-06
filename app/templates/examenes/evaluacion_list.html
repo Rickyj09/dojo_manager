@@ -1,0 +1,63 @@
+{% extends "base_admin.html" %}
+{% block title %}Evaluación{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h3 class="mb-0">Evaluación - Examen #{{ examen.id }}</h3>
+    <div class="text-muted small">
+      {{ examen.disciplina }} · {{ examen.fecha }} {% if examen.hora %}{{ examen.hora }}{% endif %}
+      {% if examen.sede %}· {{ examen.sede }}{% endif %}
+    </div>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('examenes.editar', examen_id=examen.id) }}">Volver</a>
+</div>
+
+<div class="table-responsive">
+  <table class="table table-striped align-middle">
+    <thead class="table-dark">
+      <tr>
+        <th>#</th>
+        <th>Alumno</th>
+        <th>Grado actual → objetivo</th>
+        <th>Estado</th>
+        <th>Nota</th>
+        <th class="text-end">Acción</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ins in inscripciones %}
+        {% set ea = ea_map.get(ins.alumno_id) %}
+        <tr>
+          <td>{{ ins.id }}</td>
+          <td>
+            <div class="fw-semibold">{{ ins.alumno.nombres }} {{ ins.alumno.apellidos }}</div>
+            <div class="small text-muted">CI: {{ ins.alumno.numero_identidad or '-' }}</div>
+          </td>
+          <td class="small">
+            {{ ins.grado_actual.nombre if ins.grado_actual else '-' }}
+            →
+            {{ ins.grado_objetivo.nombre if ins.grado_objetivo else '-' }}
+          </td>
+          <td>
+            <span class="badge bg-{% if ins.estado in ['APROBADO','PROMOVIDO'] %}success{% elif ins.estado in ['REPROBADO'] %}danger{% elif ins.estado in ['EVALUADO'] %}primary{% else %}secondary{% endif %}">
+              {{ ins.estado }}
+            </span>
+          </td>
+          <td>{{ ins.nota_final or '-' }}</td>
+          <td class="text-end">
+  <a class="btn btn-sm btn-primary"
+     href="{{ url_for('examenes.evaluar_alumno_preguntas', examen_id=examen.id, inscripcion_id=ins.id) }}">
+     {% if ea and ea.estado == 'FINALIZADO' %}
+        Revisar
+     {% else %}
+        Evaluar
+     {% endif %}
+  </a>
+</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

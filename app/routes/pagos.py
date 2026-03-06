@@ -3,10 +3,25 @@ from flask_login import login_required, current_user
 from datetime import date
 
 from app.extensions import db
-from app.models import Pago, Alumno
+from app.tenancy import tenant_query
+
+from app.models.pago import Pago
+from app.models.alumno import Alumno
+
 from app.utils.pagos import calcular_deuda
 
 pagos_bp = Blueprint("pagos", __name__, url_prefix="/pagos")
+
+
+def _alumno_seguro(alumno_id: int):
+    """Alumno dentro del tenant y, si es PROFESOR, dentro de su sucursal."""
+    alumno = tenant_query(Alumno).filter_by(id=alumno_id).first_or_404()
+
+    if current_user.has_role("PROFESOR") and alumno.sucursal_id != current_user.sucursal_id:
+        flash("No tiene acceso a este alumno", "danger")
+        return None
+
+    return alumno
 
 
 # =========================
@@ -15,19 +30,15 @@ pagos_bp = Blueprint("pagos", __name__, url_prefix="/pagos")
 @pagos_bp.route("/")
 @login_required
 def index():
+    query = tenant_query(Pago).join(Alumno, Alumno.id == Pago.alumno_id)
 
-    query = Pago.query.join(Alumno)
-
-    # PROFESOR: solo su sucursal
+    # PROFESOR: solo su sucursal (además del tenant)
     if current_user.has_role("PROFESOR"):
         query = query.filter(Pago.sucursal_id == current_user.sucursal_id)
 
     pagos = query.order_by(Pago.fecha_pago.desc()).all()
 
-    return render_template(
-        "pagos/index.html",
-        pagos=pagos
-    )
+    return render_template("pagos/index.html", pagos=pagos)
 
 
 # =========================
@@ -36,21 +47,13 @@ def index():
 @pagos_bp.route("/nuevo/<int:alumno_id>", methods=["GET", "POST"])
 @login_required
 def nuevo(alumno_id):
+    alumno = _alumno_seguro(alumno_id)
+    if alumno is None:
+        return redirect(url_for("alumnos.index"))
 
-    alumno = Alumno.query.get_or_404(alumno_id)
     hoy = date.today()
 
-    # Seguridad por sucursal (PROFESOR)
-    if current_user.has_role("PROFESOR"):
-        if alumno.sucursal_id != current_user.sucursal_id:
-            flash("No tiene acceso a este alumno", "danger")
-            return redirect(url_for("alumnos.index"))
-
     if request.method == "POST":
-
-        # =========================
-        # CAPTURA Y CAST
-        # =========================
         try:
             mes = int(request.form["mes"])
             anio = int(request.form["anio"])
@@ -62,9 +65,6 @@ def nuevo(alumno_id):
         metodo = request.form.get("metodo")
         observacion = request.form.get("observacion")
 
-        # =========================
-        # VALIDACIONES
-        # =========================
         if monto <= 0:
             flash("El monto debe ser mayor a cero", "danger")
             return redirect(request.url)
@@ -77,10 +77,8 @@ def nuevo(alumno_id):
             flash("Año inválido", "danger")
             return redirect(request.url)
 
-        # =========================
-        # EVITAR DUPLICADOS
-        # =========================
-        existe = Pago.query.filter_by(
+        # ✅ EVITAR DUPLICADOS POR TENANT
+        existe = tenant_query(Pago).filter_by(
             alumno_id=alumno.id,
             mes=mes,
             anio=anio
@@ -90,9 +88,6 @@ def nuevo(alumno_id):
             flash("Este mes ya está pagado", "warning")
             return redirect(request.url)
 
-        # =========================
-        # CREAR PAGO
-        # =========================
         pago = Pago(
             alumno_id=alumno.id,
             sucursal_id=alumno.sucursal_id,
@@ -100,7 +95,8 @@ def nuevo(alumno_id):
             anio=anio,
             monto=monto,
             metodo=metodo,
-            observacion=observacion
+            observacion=observacion,
+            academia_id=current_user.academia_id  # ✅ explícito
         )
 
         db.session.add(pago)
@@ -109,39 +105,30 @@ def nuevo(alumno_id):
         flash("Pago registrado correctamente", "success")
         return redirect(url_for("pagos.historial_alumno", alumno_id=alumno.id))
 
-    # 🔴 ESTE RETURN ES EL QUE FALTABA
-    return render_template(
-        "pagos/nuevo.html",
-        alumno=alumno,
-        hoy=hoy
-    )
+    return render_template("pagos/nuevo.html", alumno=alumno, hoy=hoy)
 
 
 # =========================
-# HISTORIAL DE PAGOS
+# HISTORIAL DE PAGOS POR ALUMNO
 # =========================
 @pagos_bp.route("/alumno/<int:alumno_id>")
 @login_required
 def historial_alumno(alumno_id):
-
-    alumno = Alumno.query.get_or_404(alumno_id)
-
-    # Seguridad por sucursal
-    if current_user.has_role("PROFESOR"):
-        if alumno.sucursal_id != current_user.sucursal_id:
-            flash("No tiene acceso a este alumno", "danger")
-            return redirect(url_for("alumnos.index"))
+    alumno = _alumno_seguro(alumno_id)
+    if alumno is None:
+        return redirect(url_for("alumnos.index"))
 
     pagos = (
-        Pago.query
+        tenant_query(Pago)
         .filter_by(alumno_id=alumno.id)
         .order_by(Pago.anio.desc(), Pago.mes.desc())
         .all()
     )
 
-    total_pagado = sum(p.monto for p in pagos)
+    total_pagado = sum(float(p.monto) for p in pagos)
 
-    estado = calcular_deuda(alumno)
+    # ✅ deuda calculada multi-tenant (arreglamos abajo)
+    estado = calcular_deuda(alumno, academia_id=current_user.academia_id)
 
     return render_template(
         "pagos/historial.html",

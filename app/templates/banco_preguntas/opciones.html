@@ -1,0 +1,104 @@
+{% extends "base_admin.html" %}
+{% block title %}Opciones{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h3 class="mb-0">Opciones de respuesta</h3>
+    <div class="text-muted small">
+      Pregunta #{{ pregunta.id }} · {{ pregunta.tipo }}
+    </div>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('banco_preguntas.list') }}">Volver</a>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="mb-3">
+      <label class="form-label">Enunciado</label>
+      <div class="form-control bg-light" style="min-height:80px;">{{ pregunta.enunciado }}</div>
+    </div>
+
+    {% if pregunta.tipo == 'ABIERTA' %}
+      <div class="alert alert-info mb-0">
+        Esta pregunta es ABIERTA, no requiere opciones.
+      </div>
+    {% else %}
+      <form method="post" class="row g-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="add">
+
+        <div class="col-md-7">
+          <label class="form-label">Texto opción</label>
+          <input class="form-control" name="texto" required>
+        </div>
+
+        <div class="col-md-2">
+          <label class="form-label">Orden</label>
+          <input type="number" class="form-control" name="orden" value="0">
+        </div>
+
+        <div class="col-md-2 d-flex align-items-end">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="es_correcta" value="1">
+            <label class="form-check-label">Correcta</label>
+          </div>
+        </div>
+
+        <div class="col-md-1 d-flex align-items-end">
+          <button class="btn btn-success w-100" type="submit">+</button>
+        </div>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <h5 class="mb-3">Opciones registradas</h5>
+
+    <table class="table table-sm align-middle">
+      <thead class="table-dark">
+        <tr>
+          <th>ID</th>
+          <th>Texto</th>
+          <th>Correcta</th>
+          <th>Orden</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for op in opciones %}
+        <tr>
+          <td>{{ op.id }}</td>
+          <td>{{ op.texto }}</td>
+          <td>
+            {% if op.es_correcta %}
+              <span class="badge bg-success">Sí</span>
+            {% else %}
+              <span class="badge bg-secondary">No</span>
+            {% endif %}
+          </td>
+          <td>{{ op.orden }}</td>
+          <td class="text-end">
+            <form method="post" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="action" value="remove">
+              <input type="hidden" name="opcion_id" value="{{ op.id }}">
+              <button class="btn btn-sm btn-outline-danger" type="submit"
+                      onclick="return confirm('¿Eliminar opción?');">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="text-center text-muted py-3">No hay opciones registradas.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

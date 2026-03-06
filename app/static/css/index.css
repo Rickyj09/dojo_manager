@@ -36,3 +36,22 @@ body {
     display: block;
     margin: 0 auto;
 }
+
+
+.sidebar-logo {
+    width: 80px;
+    height: auto;
+    border-radius: 8px;
+}
+
+.nav-pills .nav-link {
+    border-radius: 8px;
+}
+
+.nav-pills .nav-link.active {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.nav-pills .nav-link:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+}

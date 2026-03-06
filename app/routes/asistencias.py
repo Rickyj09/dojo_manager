@@ -1,70 +1,119 @@
-# app/routes/asistencias.py
-from datetime import datetime
-from flask import Blueprint, request, redirect, url_for, flash, abort
+from datetime import date, datetime
+
+from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
+
 from app.extensions import db
-from app.models import Alumno, Asistencia
+from app.tenancy import tenant_query
+from app.models.asistencia import Asistencia
+from app.models.sucursal import Sucursal
+from app.models.alumno import Alumno
 
 asistencias_bp = Blueprint("asistencias", __name__, url_prefix="/asistencias")
 
-def puede_gestionar_alumno(alumno: Alumno) -> bool:
-    if current_user.has_role("ADMIN"):
-        return True
-    if current_user.has_role("PROFESOR") and alumno.sucursal_id == current_user.sucursal_id:
-        return True
-    return False
 
-@asistencias_bp.route("/guardar/<int:alumno_id>", methods=["POST"])
+@asistencias_bp.route("/", methods=["GET"])
 @login_required
-def guardar(alumno_id):
-    alumno = Alumno.query.get_or_404(alumno_id)
+def index():
+    # filtros
+    fecha_str = request.args.get("fecha") or date.today().isoformat()
+    sucursal_id = request.args.get("sucursal_id")
 
-    if not puede_gestionar_alumno(alumno):
-        abort(403)
-
-    if not alumno.sucursal_id:
-        flash("El alumno no tiene sucursal asignada", "danger")
-        return redirect(url_for("alumnos.editar", id=alumno.id) + "#asistencia")
-
-    fecha_str = request.form.get("fecha")
-    if not fecha_str:
-        flash("Debe seleccionar una fecha", "danger")
-        return redirect(url_for("alumnos.editar", id=alumno.id) + "#asistencia")
-
-    # 1) Parse seguro (HTML date manda YYYY-MM-DD)
     try:
         fecha = datetime.strptime(fecha_str, "%Y-%m-%d").date()
     except ValueError:
-        flash("Formato de fecha inválido", "danger")
-        return redirect(url_for("alumnos.editar", id=alumno.id) + "#asistencia")
+        fecha = date.today()
 
-    # 2) Checkbox: si viene en el form => checked
-    is_presente = "presente" in request.form
+    # sucursal según rol
+    if current_user.has_role("PROFESOR"):
+        sucursal_id = current_user.sucursal_id
 
-    # 3) Mapear a estado del modelo
-    estado = "P" if is_presente else "A"
+    sucursales = tenant_query(Sucursal).filter_by(activo=True).order_by(Sucursal.nombre).all()
 
-    sucursal_id = alumno.sucursal_id
+    alumnos_q = tenant_query(Alumno).filter_by(activo=True)
+    if sucursal_id:
+        alumnos_q = alumnos_q.filter(Alumno.sucursal_id == int(sucursal_id))
+    alumnos = alumnos_q.order_by(Alumno.apellidos.asc(), Alumno.nombres.asc()).all()
 
-    existente = Asistencia.query.filter_by(
-        fecha=fecha,
-        sucursal_id=sucursal_id,
-        alumno_id=alumno.id
-    ).first()
+    # asistencias del día (tenant)
+    asistencias = tenant_query(Asistencia).filter_by(fecha=fecha)
+    if sucursal_id:
+        asistencias = asistencias.filter(Asistencia.sucursal_id == int(sucursal_id))
+    asistencias = asistencias.all()
 
-    if existente:
-        existente.estado = estado
-        existente.registrado_por_id = current_user.id
-    else:
-        nuevo = Asistencia(
+    asist_map = {(a.alumno_id, a.sucursal_id): a for a in asistencias}
+
+    return render_template(
+        "asistencias/index.html",
+        fecha=fecha.isoformat(),
+        sucursal_id=int(sucursal_id) if sucursal_id else None,
+        sucursales=sucursales,
+        alumnos=alumnos,
+        asist_map=asist_map
+    )
+
+
+@asistencias_bp.route("/registrar", methods=["POST"])
+@login_required
+def registrar():
+    fecha_str = request.form.get("fecha") or date.today().isoformat()
+    sucursal_id = request.form.get("sucursal_id")
+
+    try:
+        fecha = datetime.strptime(fecha_str, "%Y-%m-%d").date()
+    except ValueError:
+        fecha = date.today()
+
+    # rol: profesor fuerza su sucursal
+    if current_user.has_role("PROFESOR"):
+        sucursal_id = current_user.sucursal_id
+
+    if not sucursal_id:
+        flash("Debe seleccionar sucursal.", "danger")
+        return redirect(url_for("asistencias.index", fecha=fecha.isoformat()))
+
+    sucursal_id = int(sucursal_id)
+
+    # Validar sucursal del tenant
+    suc = tenant_query(Sucursal).filter_by(id=sucursal_id, activo=True).first()
+    if not suc:
+        flash("Sucursal inválida para esta academia.", "danger")
+        return redirect(url_for("asistencias.index", fecha=fecha.isoformat()))
+
+    # estados recibidos: estado_<alumno_id> = P/A/T/J
+    # solo alumnos del tenant y de esa sucursal
+    alumnos = tenant_query(Alumno).filter_by(activo=True, sucursal_id=sucursal_id).all()
+
+    for al in alumnos:
+        estado = request.form.get(f"estado_{al.id}", "P").strip().upper()
+        if estado not in ("P", "A", "T", "J"):
+            estado = "P"
+
+        observacion = (request.form.get(f"obs_{al.id}") or "").strip() or None
+
+        # upsert por unique (academia_id, fecha, alumno_id, sucursal_id)
+        reg = tenant_query(Asistencia).filter_by(
             fecha=fecha,
-            sucursal_id=sucursal_id,
-            alumno_id=alumno.id,
-            registrado_por_id=current_user.id,
-            estado=estado
-        )
-        db.session.add(nuevo)
+            alumno_id=al.id,
+            sucursal_id=sucursal_id
+        ).first()
+
+        if not reg:
+            reg = Asistencia(
+                fecha=fecha,
+                alumno_id=al.id,
+                sucursal_id=sucursal_id,
+                registrado_por_id=current_user.id,
+                estado=estado,
+                observacion=observacion,
+                academia_id=current_user.academia_id,  # explícito
+            )
+            db.session.add(reg)
+        else:
+            reg.estado = estado
+            reg.observacion = observacion
+            reg.registrado_por_id = current_user.id
 
     db.session.commit()
-    flash("Asistencia guardada correctamente", "success")
-    return redirect(url_for("alumnos.editar", id=alumno.id) + "#asistencia")
+    flash("Asistencias guardadas.", "success")
+    return redirect(url_for("asistencias.index", fecha=fecha.isoformat(), sucursal_id=sucursal_id))

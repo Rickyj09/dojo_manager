@@ -17,11 +17,34 @@
     {% endif %}
 </div>
 
+<!-- ✅ BUSCADOR (UNA SOLA VEZ) -->
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-6">
+    <input
+      type="text"
+      name="q"
+      value="{{ q or '' }}"
+      class="form-control"
+      placeholder="Buscar por apellido o cédula"
+    >
+  </div>
+
+  <div class="col-auto d-flex gap-2">
+    <button class="btn btn-primary" type="submit">
+      <i class="bi bi-search me-1"></i> Buscar
+    </button>
+
+    <a href="{{ url_for('alumnos.index') }}" class="btn btn-outline-secondary">
+      Limpiar
+    </a>
+  </div>
+</form>
+
 <div class="table-responsive">
     <table class="table table-striped align-middle">
         <thead class="table-dark">
             <tr>
-                <th>ID</th>
+                <th>Cédula</th>
                 <th>Nombres</th>
                 <th>Apellidos</th>
                 <th>Fecha nacimiento</th>
@@ -34,7 +57,7 @@
         <tbody>
         {% for a in alumnos %}
             <tr>
-                <td>{{ a.id }}</td>
+                <td>{{ a.numero_identidad }}</td>
                 <td>{{ a.nombres }}</td>
                 <td>{{ a.apellidos }}</td>
                 <td>{{ a.fecha_nacimiento }}</td>
@@ -48,10 +71,8 @@
                     {% endif %}
                 </td>
 
-                <!-- ACCIONES -->
                 <td class="text-center">
 
-                    <!-- PAGOS (ADMIN + PROFESOR) -->
                     <a href="{{ url_for('pagos.nuevo', alumno_id=a.id) }}"
                        class="btn btn-sm btn-success me-1"
                        title="Registrar pago">
@@ -69,7 +90,7 @@
                         title="Asistencia">
                         <i class="bi bi-calendar-check"></i>
                     </a>
-                    <!-- EDITAR (ADMIN + PROFESOR) -->
+
                     {% if current_user.has_role('ADMIN') or current_user.has_role('PROFESOR') %}
                         <a href="{{ url_for('alumnos.editar', id=a.id) }}"
                            class="btn btn-sm btn-warning me-1"
@@ -78,7 +99,6 @@
                         </a>
                     {% endif %}
 
-                    <!-- ELIMINAR (SOLO ADMIN) -->
                     {% if current_user.has_role('ADMIN') %}
                         <form method="post"
                               action="{{ url_for('alumnos.eliminar', id=a.id) }}"

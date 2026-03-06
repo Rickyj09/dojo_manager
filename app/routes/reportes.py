@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from app.extensions import db
 from app.models.alumno import Alumno
 from app.models.sucursal import Sucursal
-from app.models.Grado import Grado
+from app.models.grado import Grado
 from datetime import datetime
 import io
 import pandas as pd

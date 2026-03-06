@@ -1,0 +1,99 @@
+{% extends "base_admin.html" %}
+{% block title %}Resultados examen{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h3 class="mb-0">Resultados del examen</h3>
+    <div class="text-muted small">
+      Examen #{{ examen.id }} · {{ examen.disciplina }} · {{ examen.fecha }} · Estado: <b>{{ examen.estado }}</b>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('examenes.inscripciones', examen_id=examen.id) }}" class="btn btn-outline-secondary">
+      <i class="bi bi-arrow-left"></i> Volver
+    </a>
+    <a href="{{ url_for('examenes.acta_pdf', examen_id=examen.id) }}" class="btn btn-danger" target="_blank">
+      <i class="bi bi-file-earmark-pdf"></i> Acta PDF
+    </a>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-striped align-middle">
+        <thead class="table-dark">
+          <tr>
+            <th>#</th>
+            <th>Alumno</th>
+            <th>Actual</th>
+            <th>Objetivo</th>
+            <th>Teoría</th>
+            <th>Poomsae</th>
+            <th>Combate</th>
+            <th>Final</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ins in inscripciones %}
+          {% set alumno = alumnos_map.get(ins.alumno_id) %}
+          <tr>
+            <td>{{ ins.id }}</td>
+            <td>
+              {% if alumno %}
+                {{ alumno.apellidos }} {{ alumno.nombres }}
+                <div class="small text-muted">{{ alumno.numero_identidad or ('#' ~ ins.alumno_id) }}</div>
+              {% else %}
+                #{{ ins.alumno_id }}
+              {% endif %}
+            </td>
+            <td>
+              {% if grados_map.get(ins.grado_actual_id) %}
+                {{ grados_map.get(ins.grado_actual_id).nombre }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>
+              {% if grados_map.get(ins.grado_objetivo_id) %}
+                {{ grados_map.get(ins.grado_objetivo_id).nombre }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>{{ '%.2f'|format((ins.nota_teoria or 0)|float) }}</td>
+            <td>{{ '%.2f'|format((ins.nota_poomsae or 0)|float) }}</td>
+            <td>{{ '%.2f'|format((ins.nota_combate or 0)|float) }}</td>
+            <td><strong>{{ '%.2f'|format((ins.nota_final or 0)|float) }}</strong></td>
+            <td>
+              {% if ins.estado == 'PROMOVIDO' %}
+                <span class="badge bg-success">{{ ins.estado }}</span>
+              {% elif ins.estado == 'APROBADO' %}
+                <span class="badge bg-success">{{ ins.estado }}</span>
+              {% elif ins.estado == 'REPROBADO' %}
+                <span class="badge bg-danger">{{ ins.estado }}</span>
+              {% elif ins.estado == 'EVALUADO' %}
+                <span class="badge bg-info text-dark">{{ ins.estado }}</span>
+              {% else %}
+                <span class="badge text-bg-secondary">{{ ins.estado }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+
+          {% if inscripciones|length == 0 %}
+          <tr>
+            <td colspan="9" class="text-center text-muted py-3">
+              No hay resultados.
+            </td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "base_admin.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="mb-0">Exámenes de ascenso</h3>
+  <a class="btn btn-primary" href="{{ url_for('examenes.nuevo') }}">+ Nuevo examen</a>
+</div>
+
+<form class="row g-2 mb-3" method="get">
+  <div class="col-auto">
+    <select name="estado" class="form-select">
+      <option value="">-- Todos los estados --</option>
+      {% for st in ['BORRADOR','ABIERTO','CERRADO','EN_EVALUACION','PENDIENTE_DECISION','PUBLICADO','ANULADO'] %}
+        <option value="{{st}}" {% if estado==st %}selected{% endif %}>{{st}}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-outline-secondary" type="submit">Filtrar</button>
+  </div>
+</form>
+
+<div class="table-responsive">
+  <table class="table table-sm table-striped align-middle">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Fecha</th>
+        <th>Disciplina</th>
+        <th>Estado</th>
+        <th>Cupos</th>
+        <th>Costo</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for x in items %}
+      <tr>
+        <td>{{ x.id }}</td>
+        <td>{{ x.fecha }}{% if x.hora %} {{ x.hora.strftime('%H:%M') }}{% endif %}</td>
+        <td>{{ x.disciplina }}</td>
+        <td><span class="badge text-bg-secondary">{{ x.estado }}</span></td>
+        <td>{{ x.cupos or '-' }}</td>
+        <td>{{ '%.2f'|format(x.costo or 0) }}</td>
+        <td class="text-end">
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('examenes.editar', examen_id=x.id) }}">Editar</a>
+          <a class="btn btn-sm btn-outline-dark" href="{{ url_for('examenes.evaluadores', examen_id=x.id) }}">Evaluadores</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="text-center text-muted py-4">Sin exámenes.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

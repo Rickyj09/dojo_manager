@@ -1,98 +1,103 @@
 {% extends "base_public.html" %}
 
-{% block title %}Ingreso | Apolo Gym{% endblock %}
+{% block title %}Ingreso | {{ app_nombre }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid min-vh-100">
-    <div class="row h-100">
+  <div class="row h-100">
 
-        <!-- COLUMNA IZQUIERDA (BRANDING) -->
-        <div class="col-md-6 d-none d-md-flex login-brand
-                    flex-column justify-content-center align-items-center text-white">
+    <!-- COLUMNA IZQUIERDA (BRANDING) -->
+    <div class="col-md-6 d-none d-md-flex login-brand
+                flex-column justify-content-center align-items-center text-white">
 
-            <img src="{{ url_for('static', filename='img/logo_apolo.jpg') }}"
-                 class="login-logo mb-4"
-                 alt="Apolo Gym">
+      <img src="{{ url_for('static', filename=app_logo) }}"
+           class="login-logo mb-4"
+           alt="{{ app_nombre }}">
 
-            <h2 class="fw-bold">APOLO GYM</h2>
-            <p class="fs-5 text-center mt-2">
-                Sistema de Gestión Académica
-            </p>
+      <h2 class="fw-bold">{{ app_nombre }}</h2>
+      <p class="fs-5 text-center mt-2">
+        Sistema de gestión para academias y torneos
+      </p>
 
-            <ul class="list-unstyled mt-4">
-                <li><i class="bi bi-check-circle"></i> Control de alumnos</li>
-                <li><i class="bi bi-check-circle"></i> Gestión por participaciones en torneos</li>
-                <li><i class="bi bi-check-circle"></i> Ranking</li>
-                <li><i class="bi bi-check-circle"></i> Gestión por sucursal</li>
-                <li><i class="bi bi-check-circle"></i> Acceso por roles</li>
-            </ul>
-        </div>
-
-        <!-- COLUMNA DERECHA (LOGIN) -->
-        <div class="col-md-6 d-flex justify-content-center align-items-center">
-            <div class="login-card shadow">
-
-                <h4 class="mb-4 text-center fw-bold">
-                    Ingreso al sistema
-                </h4>
-
-                <!-- MENSAJES FLASH (UNA SOLA VEZ) -->
-                {% with messages = get_flashed_messages(with_categories=true) %}
-                    {% if messages %}
-                        {% set has_error = false %}
-                        {% for category, message in messages %}
-                            {% if category in ['danger', 'warning'] %}
-                                {% set has_error = true %}
-                            {% endif %}
-                            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                                {{ message }}
-                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                            </div>
-                        {% endfor %}
-                    {% endif %}
-                {% endwith %}
-
-                <!-- FORMULARIO -->
-                <form method="post" action="{{ url_for('auth.login') }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
-                    <div class="mb-3">
-                        <label class="form-label">Usuario o correo</label>
-                        <input type="text"
-                               name="username"
-                               class="form-control"
-                               placeholder="usuario@correo.com"
-                               required>
-                    </div>
-
-                    <div class="mb-4">
-                        <label class="form-label">Contraseña</label>
-                        <input type="password"
-                               name="password"
-                               class="form-control"
-                               placeholder="••••••••"
-                               required>
-                    </div>
-
-                    <button class="btn btn-dark w-100">
-                        <i class="bi bi-box-arrow-in-right"></i>
-                        Ingresar
-                    </button>
-                </form>
-
-                <!-- BOTÓN VOLVER (SI HUBO ERROR) -->
-                
-                <div class="text-center mt-3">
-                    <a href="{{ url_for('public.home') }}"
-                       class="btn btn-outline-secondary w-100">
-                        ← Volver a la página web
-                    </a>
-                </div>
-                
-
-            </div>
-        </div>
-
+      <ul class="list-unstyled mt-4">
+        <li><i class="bi bi-check-circle"></i> Control de alumnos</li>
+        <li><i class="bi bi-check-circle"></i> Asistencias</li>
+        <li><i class="bi bi-check-circle"></i> Pagos mensuales</li>
+        <li><i class="bi bi-check-circle"></i> Torneos y participaciones</li>
+        <li><i class="bi bi-check-circle"></i> Ranking</li>
+        <li><i class="bi bi-check-circle"></i> Acceso por roles</li>
+        <li><i class="bi bi-check-circle"></i> Multi-tenant por academia</li>
+        <li><i class="bi bi-check-circle"></i> Reportes</li>
+      </ul>
     </div>
+
+    <!-- COLUMNA DERECHA (LOGIN) -->
+    <div class="col-md-6 d-flex justify-content-center align-items-center">
+      <div class="login-card shadow">
+
+        <div class="text-center mb-3 d-md-none">
+          <!-- En móvil no hay columna izquierda, mostramos logo arriba -->
+          <img src="{{ url_for('static', filename=app_logo) }}"
+               alt="{{ app_nombre }}"
+               style="max-height: 70px;"
+               class="mb-2">
+          <div class="fw-bold">{{ app_nombre }}</div>
+        </div>
+
+        <h4 class="mb-4 text-center fw-bold">
+          Ingreso al sistema
+        </h4>
+
+        <!-- MENSAJES FLASH -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+              </div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <!-- FORMULARIO -->
+        <form method="post" action="{{ url_for('auth.login') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+          <div class="mb-3">
+            <label class="form-label">Usuario o correo</label>
+            <input type="text"
+                   name="username"
+                   class="form-control"
+                   placeholder="usuario@correo.com"
+                   required>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label">Contraseña</label>
+            <input type="password"
+                   name="password"
+                   class="form-control"
+                   placeholder="••••••••"
+                   required>
+          </div>
+
+          <button class="btn btn-dark w-100">
+            <i class="bi bi-box-arrow-in-right"></i>
+            Ingresar
+          </button>
+        </form>
+
+        <div class="text-center mt-3">
+          <a href="{{ url_for('public.home') }}"
+             class="btn btn-outline-secondary w-100">
+            ← Volver a la página web
+          </a>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
 </div>
 {% endblock %}

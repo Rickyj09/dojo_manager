@@ -1,6 +1,7 @@
 from app.extensions import db
+from app.models.mixins import TenantMixin
 
-class ResultadoDetalle(db.Model):
+class ResultadoDetalle(TenantMixin,db.Model):
     __tablename__ = "resultados_detalle"
 
     id = db.Column(db.Integer, primary_key=True)

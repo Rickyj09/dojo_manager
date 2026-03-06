@@ -2,12 +2,13 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>{% block title %}Admin{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Panel Administrativo{% endblock %}</title>
 
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 
-    <!-- Bootstrap Icons CDN -->
+    <!-- Bootstrap Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 
     <!-- CSS propio -->
@@ -18,44 +19,92 @@
 
 <body class="bg-light">
 
-<!-- NAVBAR MOBILE -->
+<!-- ===================== -->
+<!-- NAVBAR MOBILE TOP -->
+<!-- ===================== -->
 <nav class="navbar navbar-dark bg-dark d-md-none">
     <div class="container-fluid">
+
         <button class="btn btn-outline-light"
                 data-bs-toggle="offcanvas"
                 data-bs-target="#sidebarMobile">
             <i class="bi bi-list"></i>
         </button>
-        <span class="navbar-brand">Apolo Gym</span>
+
+        <span class="navbar-brand mb-0">
+            {{ tenant_nombre or "DojoManager" }}
+            {% if role_label %}
+                <small class="text-secondary ms-2">{{ role_label }}</small>
+            {% endif %}
+        </span>
+
     </div>
 </nav>
 
+
+<!-- ===================== -->
 <!-- SIDEBAR MOBILE -->
-<div class="offcanvas offcanvas-start bg-dark text-white" id="sidebarMobile">
-    <div class="offcanvas-header">
-        <h5>Apolo Gym</h5>
+<!-- ===================== -->
+<div class="offcanvas offcanvas-start bg-dark text-white" tabindex="-1" id="sidebarMobile">
+    <div class="offcanvas-header border-bottom border-secondary">
+        <div>
+            <h5 class="mb-0">{{ tenant_nombre or "DojoManager" }}</h5>
+            <div class="small text-secondary">
+                {% if role_label %}{{ role_label }}{% endif %}
+                {% if sucursal_nombre %} · {{ sucursal_nombre }}{% endif %}
+            </div>
+        </div>
+
         <button class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
     </div>
+
     <div class="offcanvas-body">
         {% include "partials/sidebar_menu.html" %}
     </div>
 </div>
 
+
+<!-- ===================== -->
+<!-- LAYOUT PRINCIPAL -->
+<!-- ===================== -->
 <div class="d-flex">
+
     <!-- SIDEBAR DESKTOP -->
-    <aside class="bg-dark text-white p-3 d-none d-md-flex flex-column" style="width:260px;">
+    <aside class="bg-dark text-white p-3 d-none d-md-flex flex-column"
+           style="width:260px; min-height:100vh;">
+
         {% include "partials/sidebar_menu.html" %}
+
     </aside>
 
-    <!-- CONTENIDO -->
+    <!-- CONTENIDO PRINCIPAL -->
     <main class="flex-grow-1 p-4">
+
+        <!-- Flash messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
         {% block content %}{% endblock %}
+
     </main>
+
 </div>
 
+
+<!-- ===================== -->
 <!-- Bootstrap JS -->
+<!-- ===================== -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 {% block extra_js %}{% endblock %}
+
 </body>
 </html>

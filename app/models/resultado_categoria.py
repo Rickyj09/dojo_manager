@@ -1,7 +1,8 @@
 from app.extensions import db
 from datetime import datetime
+from app.models.mixins import TenantMixin
 
-class ResultadoCategoria(db.Model):
+class ResultadoCategoria(TenantMixin,db.Model):
     __tablename__ = "resultados_categoria"
 
     id = db.Column(db.Integer, primary_key=True)

@@ -1,8 +1,9 @@
 from app.extensions import db
 from datetime import date 
 from sqlalchemy import Enum
+from app.models.mixins import TenantMixin
 
-class Alumno(db.Model):
+class Alumno(TenantMixin,db.Model):
     __tablename__ = "alumnos"
 
     id = db.Column(db.Integer, primary_key=True)
