@@ -212,7 +212,7 @@ def nuevo():
     plantillas = PlantillaExamen.query.filter_by(academia_id=academia_id, activo=True).order_by(PlantillaExamen.nombre.asc()).all()
 
     if request.method == "POST":
-        disciplina = (request.form.get("disciplina") or "").strip()
+        disciplina = (request.form.get("disciplina") or "").strip().upper()
         fecha = _parse_date(request.form.get("fecha"))
         hora = _parse_time(request.form.get("hora"))
         sede = (request.form.get("sede") or "").strip() or None
@@ -225,6 +225,15 @@ def nuevo():
         costo = request.form.get("costo", type=float)
         mostrar_resultado = request.form.get("mostrar_resultado_al_alumno") == "1"
 
+        usa_teoria = request.form.get("usa_teoria") == "1"
+        usa_poomsae = request.form.get("usa_poomsae") == "1"
+        usa_combate = request.form.get("usa_combate") == "1"
+
+        peso_teoria = request.form.get("peso_teoria", type=float)
+        peso_poomsae = request.form.get("peso_poomsae", type=float)
+        peso_combate = request.form.get("peso_combate", type=float)
+        nota_minima_aprobacion = request.form.get("nota_minima_aprobacion", type=float)
+
         if not disciplina:
             flash("Disciplina es obligatoria.", "danger")
             return render_template("examenes/form.html", item=None, sucursales=sucursales, grados=grados, plantillas=plantillas)
@@ -235,6 +244,10 @@ def nuevo():
 
         if not grado_objetivo_id:
             flash("Selecciona el grado objetivo.", "danger")
+            return render_template("examenes/form.html", item=None, sucursales=sucursales, grados=grados, plantillas=plantillas)
+
+        if usa_teoria and not plantilla_id:
+            flash("Si el examen usa teoría, debes seleccionar una plantilla.", "danger")
             return render_template("examenes/form.html", item=None, sucursales=sucursales, grados=grados, plantillas=plantillas)
 
         item = Examen(
@@ -250,6 +263,13 @@ def nuevo():
             costo=costo if costo is not None else 0.00,
             estado="BORRADOR",
             mostrar_resultado_al_alumno=mostrar_resultado,
+            usa_teoria=usa_teoria,
+            usa_poomsae=usa_poomsae,
+            usa_combate=usa_combate,
+            peso_teoria=peso_teoria if peso_teoria is not None else 30.00,
+            peso_poomsae=peso_poomsae if peso_poomsae is not None else 40.00,
+            peso_combate=peso_combate if peso_combate is not None else 30.00,
+            nota_minima_aprobacion=nota_minima_aprobacion if nota_minima_aprobacion is not None else 70.00,
             created_by=getattr(current_user, "id", None),
         )
         db.session.add(item)
@@ -259,7 +279,6 @@ def nuevo():
         return redirect(url_for("examenes.editar", examen_id=item.id))
 
     return render_template("examenes/form.html", item=None, sucursales=sucursales, grados=grados, plantillas=plantillas)
-
 
 # =========================================================
 # Editar
@@ -286,7 +305,7 @@ def editar(examen_id: int):
             flash("Este examen ya no se puede editar en este estado.", "warning")
             return redirect(url_for("examenes.editar", examen_id=item.id))
 
-        item.disciplina = (request.form.get("disciplina") or "").strip()
+        item.disciplina = (request.form.get("disciplina") or "").strip().upper()
         item.fecha = _parse_date(request.form.get("fecha")) or item.fecha
         item.hora = _parse_time(request.form.get("hora"))
         item.sede = (request.form.get("sede") or "").strip() or None
@@ -298,14 +317,37 @@ def editar(examen_id: int):
         item.cupos = request.form.get("cupos", type=int)
         costo = request.form.get("costo", type=float)
         item.costo = costo if costo is not None else item.costo
+
         item.mostrar_resultado_al_alumno = (request.form.get("mostrar_resultado_al_alumno") == "1")
+
+        item.usa_teoria = request.form.get("usa_teoria") == "1"
+        item.usa_poomsae = request.form.get("usa_poomsae") == "1"
+        item.usa_combate = request.form.get("usa_combate") == "1"
+
+        if item.usa_teoria and not item.plantilla_id:
+            flash("Si el examen usa teoría, debes seleccionar una plantilla.", "danger")
+            return render_template("examenes/form.html", item=item, sucursales=sucursales, grados=grados, plantillas=plantillas)
+
+        peso_teoria = request.form.get("peso_teoria", type=float)
+        peso_poomsae = request.form.get("peso_poomsae", type=float)
+        peso_combate = request.form.get("peso_combate", type=float)
+
+        if peso_teoria is not None:
+            item.peso_teoria = peso_teoria
+        if peso_poomsae is not None:
+            item.peso_poomsae = peso_poomsae
+        if peso_combate is not None:
+            item.peso_combate = peso_combate
+
+        nota_minima = request.form.get("nota_minima_aprobacion", type=float)
+        if nota_minima is not None:
+            item.nota_minima_aprobacion = nota_minima
 
         db.session.commit()
         flash("Examen actualizado.", "success")
         return redirect(url_for("examenes.editar", examen_id=item.id))
 
     return render_template("examenes/form.html", item=item, sucursales=sucursales, grados=grados, plantillas=plantillas)
-
 
 # =========================================================
 # Cambiar estado
@@ -648,10 +690,11 @@ def iniciar_evaluacion(examen_id: int):
         .filter_by(
             academia_id=academia_id,
             grado_id=plantilla.grado_id,
-            disciplina=plantilla.disciplina,
             activo=True,
         )
+        .filter(BancoPregunta.disciplina == examen.disciplina)
     )
+    
 
     total_banco = base_q.count()
     if total_banco == 0:

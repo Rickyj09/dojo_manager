@@ -2,7 +2,7 @@
 {% block title %}Ascensos{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div>
     <h2 class="mb-0">Ascensos</h2>
     <small class="text-muted">Historial de ascensos</small>
@@ -19,8 +19,8 @@
   <div class="col-md-2">
     <select class="form-select" name="origen">
       <option value="">Origen (todos)</option>
-      <option value="EXAMEN" {% if filtros.origen=='EXAMEN' %}selected{% endif %}>EXAMEN</option>
-      <option value="MANUAL" {% if filtros.origen=='MANUAL' %}selected{% endif %}>MANUAL</option>
+      <option value="EXAMEN" {% if filtros.origen == 'EXAMEN' %}selected{% endif %}>EXAMEN</option>
+      <option value="MANUAL" {% if filtros.origen == 'MANUAL' %}selected{% endif %}>MANUAL</option>
     </select>
   </div>
   <div class="col-md-2">
@@ -30,8 +30,12 @@
     <input class="form-control" type="date" name="hasta" value="{{ filtros.hasta or '' }}">
   </div>
   <div class="col-md-2 d-flex gap-2">
-    <button class="btn btn-primary w-100" type="submit"><i class="bi bi-search"></i></button>
-    <a class="btn btn-outline-secondary w-100" href="{{ url_for('ascensos.list') }}"><i class="bi bi-x-circle"></i></a>
+    <button class="btn btn-primary w-100" type="submit">
+      <i class="bi bi-search"></i>
+    </button>
+    <a class="btn btn-outline-secondary w-100" href="{{ url_for('ascensos.list') }}">
+      <i class="bi bi-x-circle"></i>
+    </a>
   </div>
 </form>
 
@@ -54,26 +58,46 @@
       <tr>
         <td>{{ x.fecha }}</td>
         <td>
-          {% if al %}{{ al.apellidos }} {{ al.nombres }}{% else %}#{{ x.alumno_id }}{% endif %}
+          {% if al %}
+            {{ al.apellidos }} {{ al.nombres }}
+          {% else %}
+            #{{ x.alumno_id }}
+          {% endif %}
         </td>
         <td>{{ grados_map.get(x.grado_anterior_id).nombre if grados_map.get(x.grado_anterior_id) else ('#' ~ x.grado_anterior_id) }}</td>
         <td>{{ grados_map.get(x.grado_nuevo_id).nombre if grados_map.get(x.grado_nuevo_id) else ('#' ~ x.grado_nuevo_id) }}</td>
-        <td><span class="badge bg-{% if x.origen=='EXAMEN' %}info{% else %}secondary{% endif %}">{{ x.origen }}</span></td>
+        <td>
+          <span class="badge bg-{% if x.origen == 'EXAMEN' %}info text-dark{% else %}secondary{% endif %}">
+            {{ x.origen }}
+          </span>
+        </td>
         <td>{% if x.examen_id %}#{{ x.examen_id }}{% else %}—{% endif %}</td>
         <td class="text-center">
-          <a class="btn btn-sm btn-warning" href="{{ url_for('ascensos.editar', ascenso_id=x.id) }}" title="Editar">
+          <a class="btn btn-sm btn-warning"
+             href="{{ url_for('ascensos.editar', ascenso_id=x.id) }}"
+             title="Editar">
             <i class="bi bi-pencil"></i>
           </a>
-          <form method="post" action="{{ url_for('ascensos.eliminar', ascenso_id=x.id) }}" class="d-inline"
+
+          <form method="post"
+                action="{{ url_for('ascensos.eliminar', ascenso_id=x.id) }}"
+                class="d-inline"
                 onsubmit="return confirm('¿Eliminar este ascenso?');">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button class="btn btn-sm btn-danger" title="Eliminar"><i class="bi bi-trash"></i></button>
+            <button class="btn btn-sm btn-danger" title="Eliminar" type="submit">
+              <i class="bi bi-trash"></i>
+            </button>
           </form>
         </td>
       </tr>
       {% endfor %}
+
       {% if not ascensos %}
-      <tr><td colspan="7" class="text-center text-muted py-4">No hay ascensos registrados.</td></tr>
+      <tr>
+        <td colspan="7" class="text-center text-muted py-4">
+          No hay ascensos registrados.
+        </td>
+      </tr>
       {% endif %}
     </tbody>
   </table>

@@ -2,7 +2,7 @@
 {% block title %}Banco de preguntas{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div>
     <h3 class="mb-0">Banco de preguntas</h3>
     <div class="text-muted small">Administración de preguntas por grado y disciplina</div>
@@ -16,19 +16,25 @@
   <div class="card-body">
     <form method="get" class="row g-2">
       <div class="col-md-3">
-        <input class="form-control" name="texto" value="{{ filtros.texto or '' }}" placeholder="Buscar en enunciado">
+        <input class="form-control"
+               name="texto"
+               value="{{ filtros.texto or '' }}"
+               placeholder="Buscar en enunciado">
       </div>
 
       <div class="col-md-2">
-        <input class="form-control" name="disciplina" value="{{ filtros.disciplina or '' }}" placeholder="Disciplina">
+        <input class="form-control"
+               name="disciplina"
+               value="{{ filtros.disciplina or '' }}"
+               placeholder="Disciplina">
       </div>
 
       <div class="col-md-2">
         <select class="form-select" name="tipo">
           <option value="">-- Tipo --</option>
-          <option value="OPCION_MULTIPLE" {% if filtros.tipo=='OPCION_MULTIPLE' %}selected{% endif %}>OPCION_MULTIPLE</option>
-          <option value="VERDADERO_FALSO" {% if filtros.tipo=='VERDADERO_FALSO' %}selected{% endif %}>VERDADERO_FALSO</option>
-          <option value="ABIERTA" {% if filtros.tipo=='ABIERTA' %}selected{% endif %}>ABIERTA</option>
+          <option value="OPCION_MULTIPLE" {% if filtros.tipo == 'OPCION_MULTIPLE' %}selected{% endif %}>OPCIÓN MÚLTIPLE</option>
+          <option value="VERDADERO_FALSO" {% if filtros.tipo == 'VERDADERO_FALSO' %}selected{% endif %}>VERDADERO / FALSO</option>
+          <option value="ABIERTA" {% if filtros.tipo == 'ABIERTA' %}selected{% endif %}>ABIERTA</option>
         </select>
       </div>
 
@@ -36,20 +42,24 @@
         <select class="form-select" name="grado_id">
           <option value="">-- Grado --</option>
           {% for g in grados %}
-            <option value="{{ g.id }}" {% if filtros.grado_id==g.id %}selected{% endif %}>{{ g.nombre }}</option>
+            <option value="{{ g.id }}" {% if filtros.grado_id == g.id %}selected{% endif %}>{{ g.nombre }}</option>
           {% endfor %}
         </select>
       </div>
 
       <div class="col-md-2 d-flex gap-2">
-        <button class="btn btn-outline-primary w-100" type="submit">Filtrar</button>
-        <a class="btn btn-outline-secondary w-100" href="{{ url_for('banco_preguntas.list') }}">Limpiar</a>
+        <button class="btn btn-outline-primary w-100" type="submit">
+          Filtrar
+        </button>
+        <a class="btn btn-outline-secondary w-100" href="{{ url_for('banco_preguntas.list') }}">
+          Limpiar
+        </a>
       </div>
     </form>
   </div>
 </div>
 
-<div class="card">
+<div class="card shadow-sm">
   <div class="card-body">
     <div class="table-responsive">
       <table class="table table-sm align-middle">
@@ -62,7 +72,7 @@
             <th>Enunciado</th>
             <th>Puntaje</th>
             <th>Activo</th>
-            <th></th>
+            <th style="width:140px;"></th>
           </tr>
         </thead>
         <tbody>
@@ -73,7 +83,7 @@
             <td>{{ grados_map.get(i.grado_id).nombre if grados_map.get(i.grado_id) else i.grado_id }}</td>
             <td>{{ i.tipo }}</td>
             <td>{{ i.enunciado }}</td>
-            <td>{{ i.puntaje_max }}</td>
+            <td>{{ '%.2f'|format((i.puntaje_max or 0)|float) }}</td>
             <td>
               {% if i.activo %}
                 <span class="badge bg-success">Sí</span>
@@ -82,17 +92,19 @@
               {% endif %}
             </td>
             <td class="text-end">
-              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('banco_preguntas.editar', pregunta_id=i.id) }}">
-                <i class="bi bi-pencil"></i>
-              </a>
-
-              <a class="btn btn-sm btn-outline-dark" href="{{ url_for('banco_preguntas.opciones', pregunta_id=i.id) }}">
+              <a class="btn btn-sm btn-outline-dark"
+                 href="{{ url_for('banco_preguntas.opciones', pregunta_id=i.id) }}"
+                 title="Gestionar opciones">
                 <i class="bi bi-list-check"></i>
               </a>
 
-              <form method="post" action="{{ url_for('banco_preguntas.eliminar', pregunta_id=i.id) }}" class="d-inline">
+              <form method="post"
+                    action="{{ url_for('banco_preguntas.eliminar', pregunta_id=i.id) }}"
+                    class="d-inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn-sm btn-outline-danger" type="submit"
+                <button class="btn btn-sm btn-outline-danger"
+                        type="submit"
+                        title="Eliminar"
                         onclick="return confirm('¿Eliminar esta pregunta?');">
                   <i class="bi bi-trash"></i>
                 </button>
@@ -101,7 +113,9 @@
           </tr>
           {% else %}
           <tr>
-            <td colspan="8" class="text-center text-muted py-3">No hay preguntas registradas.</td>
+            <td colspan="8" class="text-center text-muted py-3">
+              No hay preguntas registradas.
+            </td>
           </tr>
           {% endfor %}
         </tbody>

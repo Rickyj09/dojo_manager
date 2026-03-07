@@ -1,57 +1,74 @@
 {% extends "base_admin.html" %}
-{% block title %}Ascenso{% endblock %}
+{% block title %}Ascensos{% endblock %}
 
 {% block content %}
-<h2 class="mb-3">{% if modo=='editar' %}Editar{% else %}Nuevo{% endif %} ascenso</h2>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2 class="mb-0">
+      {% if modo == 'editar' %}Editar ascenso{% else %}Nuevo ascenso{% endif %}
+    </h2>
+    <small class="text-muted">
+      {% if modo == 'editar' %}
+        Modifica los datos del ascenso
+      {% else %}
+        Registrar ascenso manual o por examen
+      {% endif %}
+    </small>
+  </div>
+  <a href="{{ url_for('ascensos.list') }}" class="btn btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Volver
+  </a>
+</div>
 
-<form method="post" class="card">
+<div class="card shadow-sm">
   <div class="card-body">
-    {{ form.csrf_token }}
+    <form method="post">
+      {{ form.hidden_tag() }}
 
-    <div class="row g-3">
-      <div class="col-md-6">
-        <label class="form-label">{{ form.alumno_id.label }}</label>
-        {{ form.alumno_id(class="form-select") }}
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Alumno</label>
+          {{ form.alumno_id(class="form-select") }}
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label">Fecha</label>
+          {{ form.fecha(class="form-control") }}
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label">Origen</label>
+          {{ form.origen(class="form-select") }}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Grado anterior</label>
+          {{ form.grado_anterior_id(class="form-select") }}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Grado nuevo</label>
+          {{ form.grado_nuevo_id(class="form-select") }}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Examen</label>
+          {{ form.examen_id(class="form-select") }}
+        </div>
+
+        <div class="col-12">
+          <label class="form-label">Observación</label>
+          {{ form.observacion(class="form-control", rows="4") }}
+        </div>
       </div>
 
-      <div class="col-md-3">
-        <label class="form-label">{{ form.fecha.label }}</label>
-        {{ form.fecha(class="form-control") }}
+      <div class="mt-3 d-flex gap-2">
+        <button class="btn btn-success" type="submit">
+          {% if modo == 'editar' %}Guardar cambios{% else %}Registrar ascenso{% endif %}
+        </button>
+        <a href="{{ url_for('ascensos.list') }}" class="btn btn-outline-secondary">Cancelar</a>
       </div>
-
-      <div class="col-md-3">
-        <label class="form-label">{{ form.origen.label }}</label>
-        {{ form.origen(class="form-select") }}
-      </div>
-
-      <div class="col-md-6">
-        <label class="form-label">{{ form.grado_anterior_id.label }}</label>
-        {{ form.grado_anterior_id(class="form-select") }}
-      </div>
-
-      <div class="col-md-6">
-        <label class="form-label">{{ form.grado_nuevo_id.label }}</label>
-        {{ form.grado_nuevo_id(class="form-select") }}
-      </div>
-
-      <div class="col-md-6">
-        <label class="form-label">{{ form.examen_id.label }}</label>
-        {{ form.examen_id(class="form-select") }}
-        <div class="form-text">Usa “— Ninguno —” si el origen es MANUAL.</div>
-      </div>
-
-      <div class="col-12">
-        <label class="form-label">{{ form.observacion.label }}</label>
-        {{ form.observacion(class="form-control", rows="3") }}
-      </div>
-    </div>
-
+    </form>
   </div>
-  <div class="card-footer d-flex gap-2">
-    <button class="btn btn-primary" type="submit">
-      <i class="bi bi-save"></i> Guardar
-    </button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('ascensos.list') }}">Cancelar</a>
-  </div>
-</form>
+</div>
 {% endblock %}
