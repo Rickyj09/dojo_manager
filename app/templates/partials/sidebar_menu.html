@@ -85,6 +85,13 @@
     </li>
 
     <li class="nav-item">
+  <a href="{{ url_for('kiosk.asistencia') }}"
+     class="nav-link text-white {% if ep.startswith('kiosk.') %}active{% endif %}">
+    <i class="bi bi-person-check me-2"></i> Kiosk Asistencia
+  </a>
+</li>
+
+    <li class="nav-item">
   <a class="nav-link" href="{{ url_for('banco_preguntas.list') }}">
     <i class="bi bi-question-circle"></i>
     <span>Banco de preguntas</span>

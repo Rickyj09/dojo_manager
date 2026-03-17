@@ -21,7 +21,7 @@ from app.routes.academias import academias_bp
 from app.routes.examenes import examenes_bp
 from app.routes.ascensos import ascensos_bp
 from app.routes.banco_preguntas import banco_preguntas_bp
-
+from app.routes.kiosk import kiosk_bp
 
 from app.models import User
 
@@ -140,6 +140,7 @@ def create_app():
     app.register_blueprint(examenes_bp)
     app.register_blueprint(ascensos_bp)
     app.register_blueprint(banco_preguntas_bp)
+    app.register_blueprint(kiosk_bp)
     
 
     # -------------------------

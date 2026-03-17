@@ -13,7 +13,8 @@
 </div>
 
 <form method="post">
-     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
   <div class="table-responsive">
     <table class="table table-striped align-middle">
       <thead class="table-dark">
@@ -21,7 +22,12 @@
           <th>✔</th>
           <th>Identificación</th>
           <th>Alumno</th>
+          <th>Edad</th>
+          <th>Peso</th>
+          <th>Cinturón</th>
           <th>Sucursal</th>
+          <th>Combate sugerido</th>
+          <th>Poomsae sugerido</th>
           <th>Modalidad</th>
         </tr>
       </thead>
@@ -29,6 +35,8 @@
         {% for a in alumnos %}
           {% set mods = mapa.get(a.id, []) %}
           {% set checked = (mods|length) > 0 %}
+          {% set cat = categorias_map.get(a.id, {}) %}
+
           <tr>
             <td>
               <input class="form-check-input"
@@ -37,9 +45,45 @@
                      value="{{ a.id }}"
                      {% if checked %}checked{% endif %}>
             </td>
+
             <td>{{ a.numero_identidad or a.id }}</td>
             <td>{{ a.apellidos }} {{ a.nombres }}</td>
+            <td>{{ cat.edad or "" }}</td>
+
+            <td>
+              {% if cat.peso is not none %}
+                {{ "%.2f"|format(cat.peso) }} kg
+              {% else %}
+                <span class="badge bg-danger">Sin peso</span>
+              {% endif %}
+            </td>
+
+            <td>
+              {% if cat.grado %}
+                <span class="badge bg-secondary">{{ cat.grado }}</span>
+              {% else %}
+                <span class="badge bg-danger">Sin grado</span>
+              {% endif %}
+            </td>
+
             <td>{{ a.sucursal.nombre if a.sucursal else "" }}</td>
+
+            <td>
+              {% if cat.combate %}
+                <span class="badge bg-primary">{{ cat.combate }}</span>
+              {% else %}
+                <span class="badge bg-warning text-dark">Sin categoría</span>
+              {% endif %}
+            </td>
+
+            <td>
+              {% if cat.poomsae %}
+                <span class="badge bg-success">{{ cat.poomsae }}</span>
+              {% else %}
+                <span class="badge bg-warning text-dark">Sin categoría</span>
+              {% endif %}
+            </td>
+
             <td style="max-width:220px;">
               <select class="form-select" name="modalidad_{{ a.id }}">
                 <option value="POOMSAE" {% if 'POOMSAE' in mods and 'COMBATE' not in mods %}selected{% endif %}>POOMSAE</option>

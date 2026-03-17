@@ -12,10 +12,13 @@ from app.models.pago import Pago
 from sqlalchemy import func
 from app.models.torneo import Torneo
 from app.models.participacion import Participacion
-from app.models.categoriascompetencia import CategoriaCompetencia  # ajusta si el import es distinto
-from app.utils.categorias import obtener_categoria_competencia
-
-
+from app.models.categoriascompetencia import CategoriaCompetencia
+from app.utils.categorias import (
+    calcular_edad,
+    obtener_categoria_competencia,
+    sugerir_categoria_combate,
+    sugerir_categoria_poomsae,
+)
 
 
 def _get_fecha_base() -> date:
@@ -651,6 +654,17 @@ def seleccionar_competidores(torneo_id):
 
     alumnos = q.order_by(Alumno.apellidos, Alumno.nombres).all()
 
+    # mapa de categorías sugeridas para UI
+    categorias_map = {}
+    for a in alumnos:
+        categorias_map[a.id] = {
+            "combate": sugerir_categoria_combate(a, torneo),
+            "poomsae": sugerir_categoria_poomsae(a, torneo),
+            "edad": calcular_edad(a.fecha_nacimiento, torneo.fecha),
+            "peso": float(a.peso) if a.peso is not None else None,
+            "grado": a.grado.nombre if a.grado else None,
+        }
+
     # precargar selecciones existentes: (alumno_id -> set(modalidades))
     existentes = Participacion.query.filter_by(torneo_id=torneo.id).all()
     mapa = {}
@@ -660,21 +674,22 @@ def seleccionar_competidores(torneo_id):
     if request.method == "POST":
         seleccionados = set(map(int, request.form.getlist("alumno_ids[]")))
 
-        # 1) borrar participaciones de alumnos desmarcados (mantiene Excel limpio)
+        # borrar participaciones de alumnos desmarcados
         if seleccionados:
-            (Participacion.query
+            (
+                Participacion.query
                 .filter(Participacion.torneo_id == torneo.id)
                 .filter(~Participacion.alumno_id.in_(seleccionados))
                 .delete(synchronize_session=False)
             )
         else:
-            # si no marcó a nadie, borra todo del torneo
-            (Participacion.query
+            (
+                Participacion.query
                 .filter(Participacion.torneo_id == torneo.id)
                 .delete(synchronize_session=False)
             )
 
-        # 2) upsert de seleccionados
+        # upsert de seleccionados
         for a in alumnos:
             if a.id not in seleccionados:
                 continue
@@ -684,7 +699,7 @@ def seleccionar_competidores(torneo_id):
                 modalidad_raw = "POOMSAE"
 
             valores = _calc_valores_evento(torneo, modalidad_raw)
-            modalidades = list(valores.keys())  # ['POOMSAE'] o ['COMBATE'] o ['POOMSAE','COMBATE']
+            modalidades = list(valores.keys())
 
             for mod in modalidades:
                 categoria = obtener_categoria_competencia(alumno=a, torneo=torneo, modalidad=mod)
@@ -693,9 +708,10 @@ def seleccionar_competidores(torneo_id):
                     db.session.rollback()
                     return redirect(request.url)
 
-                p = (Participacion.query
-                        .filter_by(torneo_id=torneo.id, alumno_id=a.id, modalidad=mod)
-                        .first()
+                p = (
+                    Participacion.query
+                    .filter_by(torneo_id=torneo.id, alumno_id=a.id, modalidad=mod)
+                    .first()
                 )
 
                 if not p:
@@ -704,8 +720,6 @@ def seleccionar_competidores(torneo_id):
 
                 p.categoria_id = categoria.id
                 p.valor_evento = valores[mod]
-                # No tocamos pagado_evento si ya existía pagado
-                # p.pagado_evento, p.fecha_pago_evento quedan como estén
 
         db.session.commit()
         flash("Selección guardada correctamente.", "success")
@@ -715,7 +729,8 @@ def seleccionar_competidores(torneo_id):
         "reportes/seleccionar_competidores.html",
         torneo=torneo,
         alumnos=alumnos,
-        mapa=mapa
+        mapa=mapa,
+        categorias_map=categorias_map
     )
 
 
