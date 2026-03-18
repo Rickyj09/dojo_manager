@@ -12,8 +12,41 @@
   </a>
 </div>
 
+<!-- FILTRO POR SUCURSAL -->
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="get" class="row g-3 align-items-end">
+      <input type="hidden" name="torneo_id" value="{{ torneo.id }}">
+
+      <div class="col-md-4">
+        <label class="form-label">Sucursal</label>
+        <select name="sucursal_id" class="form-select"
+                {% if current_user.has_role('PROFESOR') %}disabled{% endif %}>
+          <option value="">-- Todas --</option>
+          {% for s in sucursales %}
+            <option value="{{ s.id }}" {% if sucursal_id == s.id %}selected{% endif %}>
+              {{ s.nombre }}
+            </option>
+          {% endfor %}
+        </select>
+
+        {% if current_user.has_role('PROFESOR') %}
+          <input type="hidden" name="sucursal_id" value="{{ sucursal_id }}">
+        {% endif %}
+      </div>
+
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary w-100">Filtrar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% if sucursal_id %}
+    <input type="hidden" name="sucursal_id" value="{{ sucursal_id }}">
+  {% endif %}
 
   <div class="table-responsive">
     <table class="table table-striped align-middle">
@@ -70,17 +103,27 @@
 
             <td>
               {% if cat.combate %}
-                <span class="badge bg-primary">{{ cat.combate }}</span>
+                {% set cls = 'bg-' ~ cat.combate.badge %}
+                {% if cat.combate.badge == 'warning' %}
+                  <span class="badge {{ cls }} text-dark">{{ cat.combate.texto }}</span>
+                {% else %}
+                  <span class="badge {{ cls }}">{{ cat.combate.texto }}</span>
+                {% endif %}
               {% else %}
-                <span class="badge bg-warning text-dark">Sin categoría</span>
+                <span class="badge bg-secondary">N/D</span>
               {% endif %}
             </td>
 
             <td>
               {% if cat.poomsae %}
-                <span class="badge bg-success">{{ cat.poomsae }}</span>
+                {% set cls = 'bg-' ~ cat.poomsae.badge %}
+                {% if cat.poomsae.badge == 'warning' %}
+                  <span class="badge {{ cls }} text-dark">{{ cat.poomsae.texto }}</span>
+                {% else %}
+                  <span class="badge {{ cls }}">{{ cat.poomsae.texto }}</span>
+                {% endif %}
               {% else %}
-                <span class="badge bg-warning text-dark">Sin categoría</span>
+                <span class="badge bg-secondary">N/D</span>
               {% endif %}
             </td>
 
@@ -90,6 +133,12 @@
                 <option value="COMBATE" {% if 'COMBATE' in mods and 'POOMSAE' not in mods %}selected{% endif %}>COMBATE</option>
                 <option value="AMBAS" {% if 'POOMSAE' in mods and 'COMBATE' in mods %}selected{% endif %}>AMBAS</option>
               </select>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="10" class="text-center text-muted">
+              No hay alumnos para mostrar con el filtro actual.
             </td>
           </tr>
         {% endfor %}

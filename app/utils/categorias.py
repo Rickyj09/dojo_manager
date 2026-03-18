@@ -18,15 +18,15 @@ def obtener_categoria_competencia(alumno, torneo, modalidad):
             sexo=alumno.genero,
             activo=True
         )
+        .order_by(CategoriaCompetencia.edad_min, CategoriaCompetencia.peso_min)
         .all()
     )
 
     for cat in categorias:
-        # validar edad
         if not (cat.edad_min <= edad <= cat.edad_max):
             continue
 
-        # COMBATE: usa peso
+        # COMBATE
         if modalidad == "COMBATE":
             if alumno.peso is None:
                 continue
@@ -40,25 +40,83 @@ def obtener_categoria_competencia(alumno, torneo, modalidad):
 
             return cat
 
-        # POOMSAE: usa grado (rango)
+        # POOMSAE
         if modalidad == "POOMSAE":
             if not alumno.grado:
                 continue
 
             orden_alumno = alumno.grado.orden
 
-            if cat.grado_min and cat.grado_max:
+            # nueva estructura con rango
+            if getattr(cat, "grado_min", None) is not None and getattr(cat, "grado_max", None) is not None:
                 if cat.grado_min.orden <= orden_alumno <= cat.grado_max.orden:
+                    return cat
+
+            # compatibilidad con estructura vieja
+            elif getattr(cat, "grado_id", None):
+                if alumno.grado_id == cat.grado_id:
                     return cat
 
     return None
 
 
-def sugerir_categoria_combate(alumno, torneo):
+def evaluar_categoria_combate(alumno, torneo):
+    if alumno.peso is None:
+        return {
+            "ok": False,
+            "estado": "FALTA_PESO",
+            "texto": "Falta peso",
+            "badge": "danger"
+        }
+
     categoria = obtener_categoria_competencia(alumno, torneo, "COMBATE")
-    return categoria.nombre if categoria else None
+
+    if categoria:
+        return {
+            "ok": True,
+            "estado": "OK",
+            "texto": categoria.nombre,
+            "badge": "primary"
+        }
+
+    return {
+        "ok": False,
+        "estado": "SIN_CATEGORIA",
+        "texto": "Sin categoría",
+        "badge": "warning"
+    }
+
+
+def evaluar_categoria_poomsae(alumno, torneo):
+    if not alumno.grado:
+        return {
+            "ok": False,
+            "estado": "FALTA_GRADO",
+            "texto": "Falta grado",
+            "badge": "danger"
+        }
+
+    categoria = obtener_categoria_competencia(alumno, torneo, "POOMSAE")
+
+    if categoria:
+        return {
+            "ok": True,
+            "estado": "OK",
+            "texto": categoria.nombre,
+            "badge": "success"
+        }
+
+    return {
+        "ok": False,
+        "estado": "SIN_CATEGORIA",
+        "texto": "Sin categoría",
+        "badge": "warning"
+    }
+
+
+def sugerir_categoria_combate(alumno, torneo):
+    return evaluar_categoria_combate(alumno, torneo)
 
 
 def sugerir_categoria_poomsae(alumno, torneo):
-    categoria = obtener_categoria_competencia(alumno, torneo, "POOMSAE")
-    return categoria.nombre if categoria else None
+    return evaluar_categoria_poomsae(alumno, torneo)

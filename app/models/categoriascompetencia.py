@@ -13,13 +13,13 @@ class CategoriaCompetencia(TenantMixin, db.Model):
     edad_min = db.Column(db.Integer, nullable=False)
     edad_max = db.Column(db.Integer, nullable=False)
 
-    peso_min = db.Column(db.Float)   # NULL para POOMSAE
-    peso_max = db.Column(db.Float)   # NULL para POOMSAE
+    peso_min = db.Column(db.Float)
+    peso_max = db.Column(db.Float)
 
-    # legado
+    # compatibilidad con estructura anterior
     grado_id = db.Column(db.Integer, nullable=True)
 
-    # nuevo rango de grados para poomsae
+    # nuevo rango de grados
     grado_min_id = db.Column(db.Integer, db.ForeignKey("grados.id"), nullable=True)
     grado_max_id = db.Column(db.Integer, db.ForeignKey("grados.id"), nullable=True)
 

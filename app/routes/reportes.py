@@ -641,55 +641,97 @@ def _calc_valores_evento(torneo: Torneo, modalidad_raw: str):
     # AMBAS => 2 filas; descuento lo aplicamos en COMBATE
     return {"POOMSAE": poom, "COMBATE": max(0.0, comb - desc)}
 
-
 @reportes_bp.route("/torneo/<int:torneo_id>/seleccionar", methods=["GET", "POST"])
 @login_required
 def seleccionar_competidores(torneo_id):
     torneo = Torneo.query.get_or_404(torneo_id)
 
-    # alumnos activos (seguridad por rol)
+    # =========================
+    # SUCURSALES DISPONIBLES
+    # =========================
+    if current_user.has_role("PROFESOR"):
+        sucursal_id = current_user.sucursal_id
+        sucursales = Sucursal.query.filter_by(id=current_user.sucursal_id).all()
+    else:
+        sucursal_id = request.values.get("sucursal_id", type=int)
+        sucursales = Sucursal.query.filter_by(activo=True).order_by(Sucursal.nombre).all()
+
+    # =========================
+    # ALUMNOS FILTRADOS
+    # =========================
     q = Alumno.query.filter_by(activo=True)
+
     if current_user.has_role("PROFESOR"):
         q = q.filter(Alumno.sucursal_id == current_user.sucursal_id)
+    elif sucursal_id:
+        q = q.filter(Alumno.sucursal_id == sucursal_id)
 
     alumnos = q.order_by(Alumno.apellidos, Alumno.nombres).all()
 
-    # mapa de categorías sugeridas para UI
+    # =========================
+    # MAPA DE CATEGORÍAS SUGERIDAS
+    # =========================
     categorias_map = {}
     for a in alumnos:
+        combate_eval = sugerir_categoria_combate(a, torneo)
+        poomsae_eval = sugerir_categoria_poomsae(a, torneo)
+
         categorias_map[a.id] = {
-            "combate": sugerir_categoria_combate(a, torneo),
-            "poomsae": sugerir_categoria_poomsae(a, torneo),
+            "combate": combate_eval,
+            "poomsae": poomsae_eval,
             "edad": calcular_edad(a.fecha_nacimiento, torneo.fecha),
             "peso": float(a.peso) if a.peso is not None else None,
             "grado": a.grado.nombre if a.grado else None,
         }
 
-    # precargar selecciones existentes: (alumno_id -> set(modalidades))
-    existentes = Participacion.query.filter_by(torneo_id=torneo.id).all()
+    # =========================
+    # SELECCIONES EXISTENTES
+    # =========================
+    existentes_q = Participacion.query.filter_by(torneo_id=torneo.id)
+
+    if current_user.has_role("PROFESOR"):
+        existentes_q = (
+            existentes_q.join(Alumno, Alumno.id == Participacion.alumno_id)
+            .filter(Alumno.sucursal_id == current_user.sucursal_id)
+        )
+    elif sucursal_id:
+        existentes_q = (
+            existentes_q.join(Alumno, Alumno.id == Participacion.alumno_id)
+            .filter(Alumno.sucursal_id == sucursal_id)
+        )
+
+    existentes = existentes_q.all()
+
     mapa = {}
     for p in existentes:
         mapa.setdefault(p.alumno_id, set()).add(p.modalidad)
 
+    # =========================
+    # GUARDAR SELECCIÓN
+    # =========================
     if request.method == "POST":
         seleccionados = set(map(int, request.form.getlist("alumno_ids[]")))
 
-        # borrar participaciones de alumnos desmarcados
-        if seleccionados:
-            (
-                Participacion.query
-                .filter(Participacion.torneo_id == torneo.id)
-                .filter(~Participacion.alumno_id.in_(seleccionados))
-                .delete(synchronize_session=False)
-            )
-        else:
-            (
-                Participacion.query
-                .filter(Participacion.torneo_id == torneo.id)
-                .delete(synchronize_session=False)
-            )
+        # borrar participaciones solo del conjunto visible/filtrado
+        alumnos_ids_visibles = [a.id for a in alumnos]
 
-        # upsert de seleccionados
+        if alumnos_ids_visibles:
+            if seleccionados:
+                (
+                    Participacion.query
+                    .filter(Participacion.torneo_id == torneo.id)
+                    .filter(Participacion.alumno_id.in_(alumnos_ids_visibles))
+                    .filter(~Participacion.alumno_id.in_(seleccionados))
+                    .delete(synchronize_session=False)
+                )
+            else:
+                (
+                    Participacion.query
+                    .filter(Participacion.torneo_id == torneo.id)
+                    .filter(Participacion.alumno_id.in_(alumnos_ids_visibles))
+                    .delete(synchronize_session=False)
+                )
+
         for a in alumnos:
             if a.id not in seleccionados:
                 continue
@@ -706,7 +748,11 @@ def seleccionar_competidores(torneo_id):
                 if not categoria:
                     flash(f"No se encontró categoría válida para {a.apellidos} {a.nombres} ({mod}).", "danger")
                     db.session.rollback()
-                    return redirect(request.url)
+                    return redirect(url_for(
+                        "reportes.seleccionar_competidores",
+                        torneo_id=torneo.id,
+                        sucursal_id=sucursal_id
+                    ))
 
                 p = (
                     Participacion.query
@@ -723,14 +769,20 @@ def seleccionar_competidores(torneo_id):
 
         db.session.commit()
         flash("Selección guardada correctamente.", "success")
-        return redirect(url_for("reportes.seleccionar_competidores", torneo_id=torneo.id))
+        return redirect(url_for(
+            "reportes.seleccionar_competidores",
+            torneo_id=torneo.id,
+            sucursal_id=sucursal_id
+        ))
 
     return render_template(
         "reportes/seleccionar_competidores.html",
         torneo=torneo,
         alumnos=alumnos,
         mapa=mapa,
-        categorias_map=categorias_map
+        categorias_map=categorias_map,
+        sucursales=sucursales,
+        sucursal_id=sucursal_id
     )
 
 
