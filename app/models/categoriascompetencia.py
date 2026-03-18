@@ -1,7 +1,8 @@
 from app.extensions import db
 from app.models.mixins import TenantMixin
 
-class CategoriaCompetencia(TenantMixin,db.Model):
+
+class CategoriaCompetencia(TenantMixin, db.Model):
     __tablename__ = "categorias_competencia"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -15,7 +16,15 @@ class CategoriaCompetencia(TenantMixin,db.Model):
     peso_min = db.Column(db.Float)   # NULL para POOMSAE
     peso_max = db.Column(db.Float)   # NULL para POOMSAE
 
-    grado_id = db.Column(db.Integer, nullable=True)  # 👈 ESTE ES EL PROBLEMA
+    # legado
+    grado_id = db.Column(db.Integer, nullable=True)
+
+    # nuevo rango de grados para poomsae
+    grado_min_id = db.Column(db.Integer, db.ForeignKey("grados.id"), nullable=True)
+    grado_max_id = db.Column(db.Integer, db.ForeignKey("grados.id"), nullable=True)
+
+    grado_min = db.relationship("Grado", foreign_keys=[grado_min_id])
+    grado_max = db.relationship("Grado", foreign_keys=[grado_max_id])
 
     nombre = db.Column(db.String(100), nullable=False)
     activo = db.Column(db.Boolean, default=True)

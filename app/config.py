@@ -14,8 +14,8 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-cambiar-en-produccion")
     WTF_CSRF_ENABLED = True
 
-    SQLALCHEMY_DATABASE_URI = ('mysql+pymysql://root:1234@127.0.0.1:3306/dojo_manager?charset=utf8mb4')
-    
+    SQLALCHEMY_DATABASE_URI = ('mysql+pymysql://Ricky09J:Md3n8m79@Ricky09J.mysql.pythonanywhere-services.com/Ricky09J$default')
+
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
       # 🔐 Seguridad de sesión
