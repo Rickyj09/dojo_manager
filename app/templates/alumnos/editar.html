@@ -196,7 +196,7 @@
       </div>
     {% else %}
 
-    <form method="post" action="{{ url_for('asistencias.guardar', alumno_id=alumno.id) }}">
+    <form method="post" action="{{ url_for('admin.asistencias_guardar', alumno_id=alumno.id) }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
   <div class="row g-3 align-items-end">
