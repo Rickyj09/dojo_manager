@@ -1,5 +1,5 @@
 import os
-from datetime import date
+from datetime import date, datetime
 
 from flask import (
     Blueprint, render_template, request, redirect, url_for,
@@ -25,6 +25,15 @@ from app.utils.auditoria import registrar_auditoria
 
 
 alumnos_bp = Blueprint("alumnos", __name__, url_prefix="/alumnos")
+
+
+def _parse_fecha(fecha_str):
+    if not fecha_str:
+        return None
+    try:
+        return datetime.strptime(fecha_str, "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 # =========================
@@ -56,13 +65,10 @@ def index():
 @alumnos_bp.route("/nuevo", methods=["GET", "POST"])
 @login_required
 def nuevo():
-    # ✅ categorías SOLO del tenant
     categorias = tenant_query(Categoria).order_by(Categoria.nombre).all()
 
-    # ✅ sucursales por rol, pero SIEMPRE dentro del tenant
     if current_user.has_role("ADMIN"):
         sucursales = tenant_query(Sucursal).filter_by(activo=True).order_by(Sucursal.nombre).all()
-
     elif current_user.has_role("PROFESOR"):
         sucursales = tenant_query(Sucursal).filter_by(
             id=current_user.sucursal_id,
@@ -72,46 +78,91 @@ def nuevo():
         flash("No tiene permisos para crear alumnos", "danger")
         return redirect(url_for("alumnos.index"))
 
-    if request.method == "POST":
-        categoria_id = request.form.get("categoria_id")
-        if not categoria_id:
-            flash("Debe seleccionar una categoría", "danger")
-            return redirect(request.url)
+    grados = tenant_query(Grado).filter_by(activo=True).order_by(Grado.orden).all()
 
-        # ADMIN selecciona sucursal; PROFESOR usa la suya
+    if request.method == "POST":
+        nombres = (request.form.get("nombres") or "").strip()
+        apellidos = (request.form.get("apellidos") or "").strip()
+        categoria_id = request.form.get("categoria_id", type=int)
+        fecha_nacimiento_str = (request.form.get("fecha_nacimiento") or "").strip()
+        genero = (request.form.get("genero") or "").strip()
+        numero_identidad = (request.form.get("numero_identidad") or "").strip() or None
+        grado_id = request.form.get("grado_id", type=int)
+        peso = request.form.get("peso", type=float)
+        flexibilidad = (request.form.get("flexibilidad") or "").strip() or None
+
         if current_user.has_role("ADMIN"):
-            sucursal_id = request.form.get("sucursal_id")
+            sucursal_id = request.form.get("sucursal_id", type=int)
         else:
             sucursal_id = current_user.sucursal_id
 
-        # ✅ Validación cross-tenant: categoría y sucursal deben existir en este tenant
-        cat = tenant_query(Categoria).filter_by(id=int(categoria_id)).first()
-        if not cat:
-            flash("Categoría inválida para esta academia.", "danger")
-            return redirect(request.url)
+        errores = []
 
-        suc = tenant_query(Sucursal).filter_by(id=int(sucursal_id), activo=True).first()
-        if not suc:
-            flash("Sucursal inválida para esta academia.", "danger")
-            return redirect(request.url)
+        if not nombres:
+            errores.append("El campo Nombres es obligatorio.")
+        if not apellidos:
+            errores.append("El campo Apellidos es obligatorio.")
+        if not categoria_id:
+            errores.append("Debe seleccionar una categoría.")
+        if not fecha_nacimiento_str:
+            errores.append("La fecha de nacimiento es obligatoria.")
+        if not genero:
+            errores.append("El género es obligatorio.")
+        if not grado_id:
+            errores.append("Debe seleccionar un grado.")
+        if not sucursal_id:
+            errores.append("Debe seleccionar una sucursal.")
+
+        fecha_nacimiento = _parse_fecha(fecha_nacimiento_str)
+        if fecha_nacimiento_str and not fecha_nacimiento:
+            errores.append("La fecha de nacimiento no tiene un formato válido.")
+
+        cat = None
+        if categoria_id:
+            cat = tenant_query(Categoria).filter_by(id=categoria_id).first()
+            if not cat:
+                errores.append("Categoría inválida para esta academia.")
+
+        suc = None
+        if sucursal_id:
+            suc = tenant_query(Sucursal).filter_by(id=sucursal_id, activo=True).first()
+            if not suc:
+                errores.append("Sucursal inválida para esta academia.")
+
+        grado = None
+        if grado_id:
+            grado = tenant_query(Grado).filter_by(id=grado_id, activo=True).first()
+            if not grado:
+                errores.append("Grado inválido para esta academia.")
+
+        if errores:
+            for e in errores:
+                flash(e, "danger")
+            return render_template(
+                "alumnos/nuevo.html",
+                categorias=categorias,
+                sucursales=sucursales,
+                grados=grados
+            )
 
         alumno = Alumno(
-            nombres=request.form["nombres"].strip(),
-            apellidos=request.form["apellidos"].strip(),
-            fecha_nacimiento=request.form["fecha_nacimiento"],
-            genero=request.form["genero"],
-            categoria_id=int(categoria_id),
-            sucursal_id=int(sucursal_id),
-            numero_identidad=(request.form.get("numero_identidad") or "").strip() or None,
+            nombres=nombres,
+            apellidos=apellidos,
+            fecha_nacimiento=fecha_nacimiento,
+            genero=genero,
+            categoria_id=categoria_id,
+            sucursal_id=sucursal_id,
+            numero_identidad=numero_identidad,
+            grado_id=grado_id,
+            peso=peso,
+            flexibilidad=flexibilidad,
             activo=True,
-            # ✅ por seguridad, set explícito (aunque hooks lo hagan)
             academia_id=current_user.academia_id
         )
 
         db.session.add(alumno)
         db.session.commit()
 
-        # 🔍 AUDITORÍA - CREACIÓN
         registrar_auditoria(
             accion="CREATE",
             entidad="ALUMNO",
@@ -120,14 +171,16 @@ def nuevo():
             datos_despues={
                 "nombres": alumno.nombres,
                 "apellidos": alumno.apellidos,
-                "fecha_nacimiento": str(alumno.fecha_nacimiento),
+                "fecha_nacimiento": str(alumno.fecha_nacimiento) if alumno.fecha_nacimiento else None,
                 "genero": alumno.genero,
                 "categoria_id": alumno.categoria_id,
-                "sucursal_id": alumno.sucursal_id
+                "sucursal_id": alumno.sucursal_id,
+                "grado_id": alumno.grado_id,
+                "peso": alumno.peso,
+                "flexibilidad": alumno.flexibilidad,
             }
         )
 
-        # 📸 FOTO
         archivo = request.files.get("foto")
         if archivo and archivo.filename:
             nombre_archivo = secure_filename(archivo.filename)
@@ -142,7 +195,8 @@ def nuevo():
     return render_template(
         "alumnos/nuevo.html",
         categorias=categorias,
-        sucursales=sucursales
+        sucursales=sucursales,
+        grados=grados
     )
 
 
@@ -152,67 +206,14 @@ def nuevo():
 @alumnos_bp.route("/<int:id>/editar", methods=["GET", "POST"])
 @login_required
 def editar(id):
-    # ✅ anti-fuga por tenant
     alumno = tenant_query(Alumno).filter_by(id=id).first_or_404()
 
-    # Seguridad por sucursal (además de tenant)
     if current_user.has_role("PROFESOR") and alumno.sucursal_id != current_user.sucursal_id:
         flash("No tiene permisos para editar este alumno", "danger")
         return redirect(url_for("alumnos.index"))
 
     grados = tenant_query(Grado).filter_by(activo=True).order_by(Grado.orden).all()
 
-    if request.method == "POST":
-        datos_antes = {
-            "nombres": alumno.nombres,
-            "apellidos": alumno.apellidos,
-            "numero_identidad": alumno.numero_identidad,
-            "peso": alumno.peso,
-            "flexibilidad": alumno.flexibilidad,
-            "grado_id": alumno.grado_id,
-            "foto": alumno.foto
-        }
-
-        alumno.nombres = request.form["nombres"].strip()
-        alumno.apellidos = request.form["apellidos"].strip()
-        alumno.numero_identidad = (request.form.get("numero_identidad") or "").strip() or None
-        alumno.peso = request.form.get("peso") or None
-        alumno.flexibilidad = request.form.get("flexibilidad")
-        alumno.grado_id = request.form.get("grado_id") or None
-
-        # 📸 FOTO
-        archivo = request.files.get("foto")
-        if archivo and archivo.filename:
-            nombre_archivo = secure_filename(archivo.filename)
-            ruta = os.path.join(current_app.config["UPLOAD_FOLDER"], nombre_archivo)
-            archivo.save(ruta)
-            alumno.foto = nombre_archivo
-
-        db.session.commit()
-
-        registrar_auditoria(
-            accion="UPDATE",
-            entidad="ALUMNO",
-            entidad_id=alumno.id,
-            descripcion="Edición de alumno",
-            datos_antes=datos_antes,
-            datos_despues={
-                "nombres": alumno.nombres,
-                "apellidos": alumno.apellidos,
-                "numero_identidad": alumno.numero_identidad,
-                "peso": alumno.peso,
-                "flexibilidad": alumno.flexibilidad,
-                "grado_id": alumno.grado_id,
-                "foto": alumno.foto
-            }
-        )
-
-        flash("Alumno actualizado correctamente", "success")
-        return redirect(url_for("alumnos.index"))
-
-    # =========================
-    # PARTICIPACIONES (filtradas por tenant)
-    # =========================
     participaciones = (
         db.session.query(Participacion)
         .join(Torneo, Torneo.id == Participacion.torneo_id)
@@ -225,9 +226,6 @@ def editar(id):
         .all()
     )
 
-    # =========================
-    # ASISTENCIAS (filtradas por tenant)
-    # =========================
     hoy = date.today()
 
     asistencia_hoy = Asistencia.query.filter_by(
@@ -249,6 +247,106 @@ def editar(id):
         .limit(10)
         .all()
     )
+
+    if request.method == "POST":
+        datos_antes = {
+            "nombres": alumno.nombres,
+            "apellidos": alumno.apellidos,
+            "fecha_nacimiento": str(alumno.fecha_nacimiento) if alumno.fecha_nacimiento else None,
+            "genero": alumno.genero,
+            "numero_identidad": alumno.numero_identidad,
+            "peso": alumno.peso,
+            "flexibilidad": alumno.flexibilidad,
+            "grado_id": alumno.grado_id,
+            "foto": alumno.foto
+        }
+
+        nombres = (request.form.get("nombres") or "").strip()
+        apellidos = (request.form.get("apellidos") or "").strip()
+        fecha_nacimiento_str = (request.form.get("fecha_nacimiento") or "").strip()
+        genero = (request.form.get("genero") or "").strip()
+        numero_identidad = (request.form.get("numero_identidad") or "").strip() or None
+        peso = request.form.get("peso", type=float)
+        flexibilidad = (request.form.get("flexibilidad") or "").strip() or None
+        grado_id = request.form.get("grado_id", type=int)
+
+        errores = []
+
+        if not nombres:
+            errores.append("El campo Nombres es obligatorio.")
+        if not apellidos:
+            errores.append("El campo Apellidos es obligatorio.")
+        if not fecha_nacimiento_str:
+            errores.append("La fecha de nacimiento es obligatoria.")
+        if not genero:
+            errores.append("El género es obligatorio.")
+        if not grado_id:
+            errores.append("Debe seleccionar un grado.")
+        if alumno.sucursal_id is None:
+            errores.append("El alumno debe tener una sucursal asignada.")
+
+        fecha_nacimiento = _parse_fecha(fecha_nacimiento_str)
+        if fecha_nacimiento_str and not fecha_nacimiento:
+            errores.append("La fecha de nacimiento no tiene un formato válido.")
+
+        grado = None
+        if grado_id:
+            grado = tenant_query(Grado).filter_by(id=grado_id, activo=True).first()
+            if not grado:
+                errores.append("El grado seleccionado no es válido para esta academia.")
+
+        if errores:
+            for e in errores:
+                flash(e, "danger")
+            return render_template(
+                "alumnos/editar.html",
+                alumno=alumno,
+                grados=grados,
+                participaciones=participaciones,
+                fecha_asistencia=hoy.isoformat(),
+                asistencia=asistencia_hoy,
+                historial_asistencias=historial_asistencias
+            )
+
+        alumno.nombres = nombres
+        alumno.apellidos = apellidos
+        alumno.fecha_nacimiento = fecha_nacimiento
+        alumno.genero = genero
+        alumno.numero_identidad = numero_identidad
+        alumno.peso = peso
+        alumno.flexibilidad = flexibilidad
+        alumno.grado_id = grado_id
+
+        archivo = request.files.get("foto")
+        if archivo and archivo.filename:
+            nombre_archivo = secure_filename(archivo.filename)
+            ruta = os.path.join(current_app.config["UPLOAD_FOLDER"], nombre_archivo)
+            archivo.save(ruta)
+            alumno.foto = nombre_archivo
+
+        db.session.commit()
+
+        registrar_auditoria(
+            accion="UPDATE",
+            entidad="ALUMNO",
+            entidad_id=alumno.id,
+            descripcion="Edición de alumno",
+            datos_antes=datos_antes,
+            datos_despues={
+                "nombres": alumno.nombres,
+                "apellidos": alumno.apellidos,
+                "fecha_nacimiento": str(alumno.fecha_nacimiento) if alumno.fecha_nacimiento else None,
+                "genero": alumno.genero,
+                "numero_identidad": alumno.numero_identidad,
+                "peso": alumno.peso,
+                "flexibilidad": alumno.flexibilidad,
+                "grado_id": alumno.grado_id,
+                "foto": alumno.foto
+            }
+        )
+
+        flash("Alumno actualizado correctamente", "success")
+        return redirect(url_for("alumnos.index"))
 
     return render_template(
         "alumnos/editar.html",

@@ -1,122 +1,108 @@
-from app.models.categoriascompetencia import CategoriaCompetencia
+from datetime import date
+
+from app.models import CategoriaCompetencia
 
 
-def calcular_edad(fecha_nacimiento, fecha_torneo):
-    edad = fecha_torneo.year - fecha_nacimiento.year
-    if (fecha_torneo.month, fecha_torneo.day) < (fecha_nacimiento.month, fecha_nacimiento.day):
-        edad -= 1
-    return edad
+def calcular_edad(fecha_nacimiento):
+    if not fecha_nacimiento:
+        return None
+
+    hoy = date.today()
+    return (
+        hoy.year
+        - fecha_nacimiento.year
+        - ((hoy.month, hoy.day) < (fecha_nacimiento.month, fecha_nacimiento.day))
+    )
+
+
+def _normalizar_genero(genero):
+    if not genero:
+        return None
+
+    genero = str(genero).strip().upper()
+
+    if genero in ("M", "MASCULINO", "HOMBRE"):
+        return "M"
+    if genero in ("F", "FEMENINO", "MUJER"):
+        return "F"
+
+    return genero
 
 
 def obtener_categoria_competencia(alumno, torneo, modalidad):
-    edad = calcular_edad(alumno.fecha_nacimiento, torneo.fecha)
+    modalidad = (modalidad or "").strip().upper()
+    sexo = _normalizar_genero(alumno.genero)
+    edad = calcular_edad(alumno.fecha_nacimiento)
 
-    categorias = (
-        CategoriaCompetencia.query
-        .filter_by(
-            modalidad=modalidad,
-            sexo=alumno.genero,
-            activo=True
-        )
-        .order_by(CategoriaCompetencia.edad_min, CategoriaCompetencia.peso_min)
-        .all()
+    if not alumno.fecha_nacimiento:
+        return None, "El alumno no tiene fecha de nacimiento registrada."
+    if not sexo:
+        return None, "El alumno no tiene género registrado."
+    if modalidad == "POOMSAE" and not alumno.grado_id:
+        return None, "El alumno no tiene grado registrado."
+    if modalidad == "COMBATE" and alumno.peso is None:
+        return None, "El alumno no tiene peso registrado."
+
+    base_query = CategoriaCompetencia.query.filter(
+        CategoriaCompetencia.activo == True,
+        CategoriaCompetencia.academia_id == alumno.academia_id,
+        CategoriaCompetencia.modalidad == modalidad,
+        CategoriaCompetencia.sexo == sexo,
+        CategoriaCompetencia.edad_min <= edad,
+        CategoriaCompetencia.edad_max >= edad,
     )
 
-    for cat in categorias:
-        if not (cat.edad_min <= edad <= cat.edad_max):
-            continue
+    if modalidad == "POOMSAE":
+        exacta = base_query.filter(
+            CategoriaCompetencia.grado_id == alumno.grado_id
+        ).order_by(CategoriaCompetencia.id.asc()).first()
 
-        # COMBATE
-        if modalidad == "COMBATE":
-            if alumno.peso is None:
-                continue
+        if exacta:
+            return exacta, None
 
-            peso_alumno = float(alumno.peso)
+        por_rango = base_query.filter(
+            CategoriaCompetencia.grado_min_id.isnot(None),
+            CategoriaCompetencia.grado_max_id.isnot(None),
+            CategoriaCompetencia.grado_min_id <= alumno.grado_id,
+            CategoriaCompetencia.grado_max_id >= alumno.grado_id,
+        ).order_by(CategoriaCompetencia.id.asc()).first()
 
-            if cat.peso_min is not None and peso_alumno < cat.peso_min:
-                continue
-            if cat.peso_max is not None and peso_alumno > cat.peso_max:
-                continue
+        if por_rango:
+            return por_rango, None
 
-            return cat
+        fallback = base_query.filter(
+            CategoriaCompetencia.nombre.ilike("%GENERAL%")
+        ).order_by(CategoriaCompetencia.id.asc()).first()
 
-        # POOMSAE
-        if modalidad == "POOMSAE":
-            if not alumno.grado:
-                continue
+        if fallback:
+            return fallback, None
 
-            orden_alumno = alumno.grado.orden
+        return None, (
+            "No se encontró categoría válida para POOMSAE. "
+            "Revise datos del alumno (edad/grado/sexo)."
+        )
 
-            # nueva estructura con rango
-            if getattr(cat, "grado_min", None) is not None and getattr(cat, "grado_max", None) is not None:
-                if cat.grado_min.orden <= orden_alumno <= cat.grado_max.orden:
-                    return cat
+    if modalidad == "COMBATE":
+        exacta_combate = base_query.filter(
+            CategoriaCompetencia.peso_min.isnot(None),
+            CategoriaCompetencia.peso_max.isnot(None),
+            CategoriaCompetencia.peso_min <= alumno.peso,
+            CategoriaCompetencia.peso_max >= alumno.peso,
+        ).order_by(CategoriaCompetencia.id.asc()).first()
 
-            # compatibilidad con estructura vieja
-            elif getattr(cat, "grado_id", None):
-                if alumno.grado_id == cat.grado_id:
-                    return cat
+        if exacta_combate:
+            return exacta_combate, None
 
-    return None
+        fallback_combate = base_query.filter(
+            CategoriaCompetencia.nombre.ilike("%GENERAL%")
+        ).order_by(CategoriaCompetencia.id.asc()).first()
 
+        if fallback_combate:
+            return fallback_combate, None
 
-def evaluar_categoria_combate(alumno, torneo):
-    if alumno.peso is None:
-        return {
-            "ok": False,
-            "estado": "FALTA_PESO",
-            "texto": "Falta peso",
-            "badge": "danger"
-        }
+        return None, (
+            "No se encontró categoría válida para COMBATE. "
+            "Revise datos del alumno (edad/peso/sexo)."
+        )
 
-    categoria = obtener_categoria_competencia(alumno, torneo, "COMBATE")
-
-    if categoria:
-        return {
-            "ok": True,
-            "estado": "OK",
-            "texto": categoria.nombre,
-            "badge": "primary"
-        }
-
-    return {
-        "ok": False,
-        "estado": "SIN_CATEGORIA",
-        "texto": "Sin categoría",
-        "badge": "warning"
-    }
-
-
-def evaluar_categoria_poomsae(alumno, torneo):
-    if not alumno.grado:
-        return {
-            "ok": False,
-            "estado": "FALTA_GRADO",
-            "texto": "Falta grado",
-            "badge": "danger"
-        }
-
-    categoria = obtener_categoria_competencia(alumno, torneo, "POOMSAE")
-
-    if categoria:
-        return {
-            "ok": True,
-            "estado": "OK",
-            "texto": categoria.nombre,
-            "badge": "success"
-        }
-
-    return {
-        "ok": False,
-        "estado": "SIN_CATEGORIA",
-        "texto": "Sin categoría",
-        "badge": "warning"
-    }
-
-
-def sugerir_categoria_combate(alumno, torneo):
-    return evaluar_categoria_combate(alumno, torneo)
-
-
-def sugerir_categoria_poomsae(alumno, torneo):
-    return evaluar_categoria_poomsae(alumno, torneo)
+    return None, "Modalidad inválida."

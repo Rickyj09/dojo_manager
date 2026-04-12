@@ -5,32 +5,66 @@
 
 <h2>Nuevo Alumno</h2>
 
-{% if error %}
-<p style="color:red">{{ error }}</p>
-{% endif %}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div style="color:red; margin-bottom:10px;">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
 
-<form method="post">
+<form method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <!-- NOMBRES -->
     <label>Nombres:</label><br>
     <input type="text" name="nombres" required><br><br>
 
+    <!-- APELLIDOS -->
     <label>Apellidos:</label><br>
     <input type="text" name="apellidos" required><br><br>
 
-    
-  <label>Número de identidad</label><br>
-  <input type="text" name="numero_identidad" required><br><br>
+    <!-- IDENTIDAD -->
+    <label>Número de identidad:</label><br>
+    <input type="text" name="numero_identidad"><br><br>
 
-        
+    <!-- FECHA NACIMIENTO -->
     <label>Fecha de nacimiento:</label><br>
     <input type="date" name="fecha_nacimiento" required><br><br>
 
+    <!-- GENERO -->
     <label>Género:</label><br>
     <select name="genero" required>
+        <option value="">-- Seleccione --</option>
         <option value="M">Masculino</option>
         <option value="F">Femenino</option>
     </select><br><br>
 
+    <!-- PESO -->
+    <label>Peso (kg):</label><br>
+    <input type="number" step="0.1" name="peso"><br><br>
+
+    <!-- FLEXIBILIDAD -->
+    <label>Flexibilidad:</label><br>
+    <select name="flexibilidad">
+        <option value="">-- Seleccione --</option>
+        <option value="Baja">Baja</option>
+        <option value="Media">Media</option>
+        <option value="Alta">Alta</option>
+    </select><br><br>
+
+    <!-- GRADO -->
+    <label>Grado (cinturón):</label><br>
+    <select name="grado_id" required>
+        <option value="">-- Seleccione --</option>
+        {% for g in grados %}
+            <option value="{{ g.id }}">{{ g.nombre }}</option>
+        {% endfor %}
+    </select><br><br>
+
+    <!-- CATEGORIA -->
     <label>Categoría:</label><br>
     <select name="categoria_id" required>
         <option value="">-- Seleccione --</option>
@@ -39,21 +73,24 @@
         {% endfor %}
     </select><br><br>
 
-    <label>Sucursal</label>
+    <!-- SUCURSAL -->
+    <label>Sucursal:</label><br>
     <select name="sucursal_id" required>
-    <option value="">-- Seleccione --</option>
-    {% for s in sucursales %}
-        <option value="{{ s.id }}">{{ s.nombre }}</option>
-    {% endfor %}
-    </select>
+        <option value="">-- Seleccione --</option>
+        {% for s in sucursales %}
+            <option value="{{ s.id }}">{{ s.nombre }}</option>
+        {% endfor %}
+    </select><br><br>
 
+    <!-- FOTO -->
+    <label>Foto del alumno:</label><br>
+    <input type="file" name="foto"><br><br>
 
     <button type="submit">Guardar</button>
 
-    
-
 </form>
 
+<br>
 <a href="{{ url_for('alumnos.index') }}">Volver</a>
 
 {% endblock %}
