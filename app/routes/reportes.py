@@ -16,8 +16,6 @@ from app.models.categoriascompetencia import CategoriaCompetencia
 from app.utils.categorias import (
     calcular_edad,
     obtener_categoria_competencia,
-    sugerir_categoria_combate,
-    sugerir_categoria_poomsae,
 )
 
 
@@ -466,7 +464,8 @@ def combate_export_excel():
     if peso_max is not None:
         q = q.filter(Alumno.peso <= peso_max)
 
-    fnac_desde, fnac_hasta = _rango_fechas_por_edad(edad_min, edad_max)
+    fecha_base = _get_fecha_base()
+    fnac_desde, fnac_hasta = _rango_fechas_por_edad(edad_min, edad_max, fecha_base)
     if fnac_desde and fnac_hasta:
         q = q.filter(Alumno.fecha_nacimiento.between(fnac_desde, fnac_hasta))
     elif fnac_desde:
@@ -630,7 +629,7 @@ def _calc_valores_evento(torneo: Torneo, modalidad_raw: str):
     """Retorna dict con valor por modalidad. Si AMBAS, aplica descuento en COMBATE."""
     poom = float(torneo.precio_poomsae or 0)
     comb = float(torneo.precio_combate or 0)
-    desc = float(torneo.descuento_ambas or 0)
+    ambas = float(torneo.precio_ambas or 0)
 
     modalidad_raw = (modalidad_raw or "POOMSAE").upper().strip()
 
@@ -639,7 +638,8 @@ def _calc_valores_evento(torneo: Torneo, modalidad_raw: str):
     if modalidad_raw == "COMBATE":
         return {"COMBATE": comb}
     # AMBAS => 2 filas; descuento lo aplicamos en COMBATE
-    return {"POOMSAE": poom, "COMBATE": max(0.0, comb - desc)}
+    mitad = round(ambas / 2.0, 2)
+    return {"POOMSAE": mitad, "COMBATE": round(ambas - mitad, 2)}
 
 @reportes_bp.route("/torneo/<int:torneo_id>/seleccionar", methods=["GET", "POST"])
 @login_required
@@ -673,13 +673,13 @@ def seleccionar_competidores(torneo_id):
     # =========================
     categorias_map = {}
     for a in alumnos:
-        combate_eval = sugerir_categoria_combate(a, torneo)
-        poomsae_eval = sugerir_categoria_poomsae(a, torneo)
+        combate_eval, combate_msg = obtener_categoria_competencia(a, torneo, "COMBATE")
+        poomsae_eval, _ = obtener_categoria_competencia(a, torneo, "POOMSAE")
 
         categorias_map[a.id] = {
             "combate": combate_eval,
             "poomsae": poomsae_eval,
-            "edad": calcular_edad(a.fecha_nacimiento, torneo.fecha),
+            "edad": calcular_edad(a.fecha_nacimiento),
             "peso": float(a.peso) if a.peso is not None else None,
             "grado": a.grado.nombre if a.grado else None,
         }

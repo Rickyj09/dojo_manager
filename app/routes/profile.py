@@ -21,6 +21,7 @@ def index():
             return redirect(url_for("profile.index"))
 
         current_user.set_password(nueva)
+        current_user.must_change_password = False
         db.session.commit()
 
         flash("Contraseña actualizada correctamente", "success")

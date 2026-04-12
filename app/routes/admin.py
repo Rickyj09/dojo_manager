@@ -118,9 +118,8 @@ def role_eliminar(id):
         flash("No se puede eliminar un rol asignado a usuarios", "danger")
         return redirect(url_for("admin.roles"))
 
-        db.session.delete(role)
-        db.session.commit()
-
+    db.session.delete(role)
+    db.session.commit()
     flash("Rol eliminado", "success")
     return redirect(url_for("admin.roles"))
 
@@ -296,7 +295,7 @@ def asistencias():
     # si no elige sucursal (ADMIN), solo muestra pantalla para seleccionar
     if not sucursal_id:
         return render_template(
-            "admin/asistencias/index.html",
+            "admin/asistencias.html",
             fecha=fecha,
             sucursal_id=None,
             sucursales=sucursales,
@@ -312,7 +311,7 @@ def asistencias():
     asistencias_map = {a.alumno_id: a for a in asistencias}
 
     return render_template(
-        "admin/asistencias/index.html",
+        "admin/asistencias.html",
         fecha=fecha,
         sucursal_id=sucursal_id,
         sucursales=sucursales,
