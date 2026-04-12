@@ -103,28 +103,26 @@
 
             <td>
               {% if cat.combate %}
-                {% set cls = 'bg-' ~ cat.combate.badge %}
-                {% if cat.combate.badge == 'warning' %}
-                  <span class="badge {{ cls }} text-dark">{{ cat.combate.texto }}</span>
-                {% else %}
-                  <span class="badge {{ cls }}">{{ cat.combate.texto }}</span>
-                {% endif %}
-              {% else %}
-                <span class="badge bg-secondary">N/D</span>
-              {% endif %}
+  <span class="badge bg-warning text-dark">
+    {{ cat.combate.nombre }}
+  </span>
+{% else %}
+  <span class="badge bg-secondary">
+    N/D
+  </span>
+{% endif %}
             </td>
 
             <td>
               {% if cat.poomsae %}
-                {% set cls = 'bg-' ~ cat.poomsae.badge %}
-                {% if cat.poomsae.badge == 'warning' %}
-                  <span class="badge {{ cls }} text-dark">{{ cat.poomsae.texto }}</span>
-                {% else %}
-                  <span class="badge {{ cls }}">{{ cat.poomsae.texto }}</span>
-                {% endif %}
-              {% else %}
-                <span class="badge bg-secondary">N/D</span>
-              {% endif %}
+  <span class="badge bg-success">
+    {{ cat.poomsae.nombre }}
+  </span>
+{% else %}
+  <span class="badge bg-secondary">
+    N/D
+  </span>
+{% endif %}
             </td>
 
             <td style="max-width:220px;">

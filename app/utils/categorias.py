@@ -3,15 +3,17 @@ from datetime import date
 from app.models import CategoriaCompetencia
 
 
-def calcular_edad(fecha_nacimiento):
+def calcular_edad(fecha_nacimiento, fecha_referencia=None):
     if not fecha_nacimiento:
         return None
 
-    hoy = date.today()
+    if not fecha_referencia:
+        fecha_referencia = date.today()
+
     return (
-        hoy.year
+        fecha_referencia.year
         - fecha_nacimiento.year
-        - ((hoy.month, hoy.day) < (fecha_nacimiento.month, fecha_nacimiento.day))
+        - ((fecha_referencia.month, fecha_referencia.day) < (fecha_nacimiento.month, fecha_referencia.day))
     )
 
 
