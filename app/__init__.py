@@ -1,5 +1,5 @@
 import os
-from flask import Flask
+from flask import Flask, request
 from app.extensions import db, login_manager, migrate, csrf
 
 # Blueprints
@@ -62,13 +62,23 @@ def create_app():
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self' https://cdn.jsdelivr.net; "
-            "font-src 'self' https://cdn.jsdelivr.net; "
-            "style-src 'self' https://cdn.jsdelivr.net; "
-            "img-src 'self' data:;"
-        )
+        if request.path.startswith("/kiosk/"):
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self'; "
+                "style-src 'self'; "
+                "img-src 'self' data:; "
+                "font-src 'self' data:; "
+                "connect-src 'self';"
+            )
+        else:
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self' https://cdn.jsdelivr.net; "
+                "font-src 'self' https://cdn.jsdelivr.net data:; "
+                "style-src 'self' https://cdn.jsdelivr.net; "
+                "img-src 'self' data:;"
+            )
         return response
 
     # -------------------------

@@ -4,209 +4,106 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kiosko | Asistencia</title>
-
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-
-  <style>
-    body { background: #f6f7fb; }
-    .wrap { max-width: 1200px; margin: 18px auto; padding: 0 14px; }
-    .mono { font-family: ui-monospace, monospace; }
-    .kiosk-title { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-    .select-hint { font-size: .9rem; color: #6c757d; }
-
-    /* =========================
-       TABLET TOUCH OPTIMIZATION
-       ========================= */
-
-    body.kiosk {
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    body.kiosk .form-control,
-    body.kiosk .form-select {
-      min-height: 56px;
-      font-size: 1.1rem;
-    }
-
-    body.kiosk .results-list {
-      max-height: 58vh;
-      overflow: auto;
-      scroll-behavior: smooth;
-    }
-
-    body.kiosk .results-list .list-group-item {
-      padding: 18px;
-      border-radius: 14px;
-      margin-bottom: 10px;
-      font-size: 1.1rem;
-    }
-
-    body.kiosk .results-list .list-group-item:active {
-      transform: scale(0.98);
-    }
-
-    body.kiosk #seleccion {
-      font-size: 1.5rem !important;
-    }
-
-    body.kiosk .kiosk-states .btn {
-      min-height: 75px;
-      font-size: 1.2rem;
-      font-weight: bold;
-    }
-
-    body.kiosk .big-btn {
-      min-height: 70px;
-      font-size: 1.25rem;
-      border-radius: 14px;
-    }
-
-    body.kiosk .toast {
-      border-radius: 14px;
-    }
-
-    body.kiosk .toast-body {
-      font-size: 1.1rem;
-    }
-
-    @media (max-width: 768px) {
-      body.kiosk .results-list {
-        max-height: 50vh;
-      }
-    }
-  </style>
-
-  <meta name="csrf-token" content="{{ csrf_token() if csrf_token is defined else '' }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/kiosk_asistencia.css') }}?v=20260429">
 </head>
 
 <body class="kiosk">
   <div class="wrap">
 
-    <div class="kiosk-title mb-3">
+    <div class="kiosk-title">
       <div>
-        <h2 class="mb-0">🟦 Kiosko de Asistencia</h2>
-        <div class="text-muted">Pantalla optimizada para tablet</div>
+        <h1 class="kiosk-heading">Kiosko de Asistencia</h1>
+        <p class="kiosk-subtitle">Pantalla optimizada para tablet</p>
       </div>
       <div>
-        <a class="btn btn-outline-secondary" href="/">Salir</a>
+        <a class="btn btn-outline" href="/">Salir</a>
       </div>
     </div>
 
-    <div class="card shadow-sm">
-      <div class="card-body p-4">
+    <main class="panel">
+      <section class="panel-body">
 
-        <div class="row g-3 align-items-end">
-          <div class="col-md-3">
-            <label class="form-label">Fecha</label>
-            <input id="fecha" type="date" class="form-control" value="{{ fecha.isoformat() }}">
+        <div class="filters-grid">
+          <div class="field">
+            <label for="fecha">Fecha</label>
+            <input id="fecha" type="date" value="{{ fecha.isoformat() }}">
           </div>
 
-          <div class="col-md-4">
-            <label class="form-label">Sucursal</label>
-            <select id="sucursal" class="form-select">
+          <div class="field">
+            <label for="sucursal">Sucursal</label>
+            <select id="sucursal">
+              {% if not sucursales %}
+                <option value="">-- Sin sucursales disponibles --</option>
+              {% endif %}
               {% for s in sucursales %}
                 <option value="{{ s.id }}" {% if s.id == sucursal_id %}selected{% endif %}>
                   {{ s.nombre }}
                 </option>
               {% endfor %}
             </select>
-            <div class="select-hint">Se guarda por (fecha, alumno, sucursal)</div>
+            <p class="field-hint">Se guarda por fecha, alumno y sucursal.</p>
           </div>
 
-          <div class="col-md-5">
-            <label class="form-label">Buscar alumno</label>
+          <div class="field">
+            <label for="q">Buscar alumno</label>
             <input
               id="q"
               type="text"
-              class="form-control"
-              placeholder="Nombre o cédula…"
+              placeholder="Nombre o cédula..."
               autocomplete="off"
               inputmode="search"
               enterkeyhint="search"
             >
-            <div class="form-text">Mínimo 2 caracteres</div>
+            <p class="field-hint">Mínimo 2 caracteres.</p>
           </div>
         </div>
 
-        <hr class="my-4">
+        <div class="divider"></div>
 
-        <div class="row g-4">
-          <div class="col-lg-7">
-
-            <div class="fw-semibold mb-2">Resultados</div>
-
-            <div id="results" class="list-group results-list">
-              <div class="text-muted p-3">Escribe para buscar…</div>
+        <div class="content-grid">
+          <section class="results-panel">
+            <h2 class="section-title">Resultados</h2>
+            <div id="resultsWarning" class="alert alert-warning hidden"></div>
+            <div id="results" class="results-list">
+              <div class="results-placeholder">Escribe para buscar...</div>
             </div>
-          </div>
+          </section>
 
-          <div class="col-lg-5">
-            <div class="card border-0 bg-light">
-              <div class="card-body">
+          <aside class="selection-panel">
+            <div class="selection-card">
+              <div class="selection-label">Seleccionado</div>
+              <div id="seleccion" class="selection-value">—</div>
 
-                <div class="text-muted small">Seleccionado</div>
-                <div id="seleccion" class="fw-semibold mb-3">—</div>
-
-                <div class="mb-3">
-                  <div class="text-muted small mb-2">Estado</div>
-                  <div class="btn-group w-100 kiosk-states" role="group">
-                    <button type="button" class="btn btn-success" data-estado="P">P (Presente)</button>
-                    <button type="button" class="btn btn-danger" data-estado="A">A (Ausente)</button>
-                    <button type="button" class="btn btn-warning" data-estado="T">T (Tarde</button>
-                    <button type="button" class="btn btn-info" data-estado="J">J (Justif.)</button>
-                  </div>
+              <div class="field">
+                <div class="field-label">Estado</div>
+                <div class="state-grid" role="group" aria-label="Estado de asistencia">
+                  <button type="button" class="btn btn-success state-btn" data-estado="P">P (Presente)</button>
+                  <button type="button" class="btn btn-danger state-btn" data-estado="A">A (Ausente)</button>
+                  <button type="button" class="btn btn-warning state-btn" data-estado="T">T (Tarde)</button>
+                  <button type="button" class="btn btn-info state-btn" data-estado="J">J (Justificado)</button>
                 </div>
-
-                <div class="mb-3">
-                  <label class="form-label">Observación</label>
-                  <input id="obs" type="text" class="form-control" placeholder="Opcional">
-                </div>
-
-                <button id="btnMarcar" class="btn btn-success big-btn w-100" disabled>
-                  ✅ Guardar asistencia
-                </button>
-
-                <button id="btnLimpiar" class="btn btn-outline-secondary w-100 mt-2">
-                  Limpiar
-                </button>
-
               </div>
+
+              <div class="field">
+                <label for="obs">Observación</label>
+                <input id="obs" type="text" placeholder="Opcional">
+              </div>
+
+              <button id="btnMarcar" class="btn btn-primary btn-large" disabled>Guardar asistencia</button>
+              <button id="btnLimpiar" class="btn btn-outline btn-large" type="button">Limpiar</button>
+
+              <div id="feedback" class="alert hidden"></div>
             </div>
-          </div>
+          </aside>
         </div>
+      </section>
+    </main>
 
-      </div>
-    </div>
-
-    <div class="text-muted small mt-3">
-      Recomendación: usar usuario exclusivo “Recepción/Kiosko”.
-    </div>
+    <p class="footer-note">Recomendación: usar un usuario exclusivo de Recepción/Kiosko.</p>
   </div>
 
-  <!-- Toasts -->
-  <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index:1080;">
+  <div id="toastHost" class="toast-host" aria-live="polite" aria-atomic="true"></div>
 
-    <!-- Confirmación -->
-    <div id="toastOk" class="toast" role="alert">
-      <div class="toast-header">
-        <strong class="me-auto">Asistencia</strong>
-        <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
-      </div>
-      <div class="toast-body" id="toastOkBody">Listo</div>
-    </div>
-
-    <!-- Aviso pensión -->
-    <div id="toastAviso" class="toast mt-2" role="alert">
-      <div class="toast-header">
-        <strong class="me-auto" id="toastAvisoTitle">Aviso de pensión</strong>
-        <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
-      </div>
-      <div class="toast-body" id="toastAvisoBody"></div>
-    </div>
-
-  </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="{{ url_for('static', filename='js/kiosk_asistencia.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/kiosk_asistencia.js') }}?v=20260429" defer></script>
 </body>
 </html>

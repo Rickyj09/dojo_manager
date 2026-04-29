@@ -1,21 +1,25 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from flask import Blueprint, render_template, request, jsonify
-from flask_login import login_required, current_user
-from sqlalchemy import or_, cast, String
 
-from app.extensions import db, csrf
+from flask import Blueprint, jsonify, render_template, request
+from flask_login import current_user, login_required
+from sqlalchemy import String, cast, or_
+
+from app.extensions import csrf, db
 from app.models.alumno import Alumno
-from app.models.sucursal import Sucursal
 from app.models.asistencia import Asistencia
-from app.utils.mensualidad import mensualidad_pagada, aviso_mensualidad
+from app.models.sucursal import Sucursal
+from app.utils.mensualidad import aviso_mensualidad, mensualidad_pagada
 
 
 kiosk_bp = Blueprint("kiosk", __name__, url_prefix="/kiosk")
 
+# Mantener en False para produccion. Si quieres que el kiosko busque en
+# toda la academia cuando no haya resultados en la sucursal, cambia a True.
+DEMO_ALLOW_CROSS_BRANCH_SEARCH = False
 
-# ---------- Helpers ----------
+
 def _parse_fecha(value: str | None) -> date:
     if not value:
         return date.today()
@@ -25,35 +29,60 @@ def _parse_fecha(value: str | None) -> date:
         return date.today()
 
 
-def _get_identidad_value(a: Alumno) -> str:
+def _parse_fecha_strict(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _current_academia_id() -> int | None:
+    return getattr(current_user, "academia_id", None)
+
+
+def _sucursales_disponibles() -> list[Sucursal]:
+    query = Sucursal.query.order_by(Sucursal.nombre.asc())
+    academia_id = _current_academia_id()
+    if academia_id:
+        query = query.filter(Sucursal.academia_id == academia_id)
+    return query.all()
+
+
+def _sucursal_valida_para_usuario(sucursal_id: int | None, sucursales: list[Sucursal]) -> int | None:
+    if not sucursal_id:
+        return None
+    valid_ids = {s.id for s in sucursales}
+    return sucursal_id if sucursal_id in valid_ids else None
+
+
+def _get_identidad_value(alumno: Alumno) -> str:
     for attr in ("numero_identidad", "identidad", "cedula", "dni", "documento", "num_documento"):
-        if hasattr(a, attr):
-            val = getattr(a, attr)
-            return (str(val).strip() if val is not None else "")
+        if hasattr(alumno, attr):
+            value = getattr(alumno, attr)
+            return str(value).strip() if value is not None else ""
     return ""
 
 
-def _get_nombre_completo(a: Alumno) -> str:
-    if hasattr(a, "nombre_completo") and getattr(a, "nombre_completo"):
-        return str(getattr(a, "nombre_completo")).strip()
-
+def _get_nombre_completo(alumno: Alumno) -> str:
     partes = []
     for attr in ("nombres", "nombre"):
-        if hasattr(a, attr) and getattr(a, attr):
-            partes.append(str(getattr(a, attr)).strip())
+        if hasattr(alumno, attr) and getattr(alumno, attr):
+            partes.append(str(getattr(alumno, attr)).strip())
     for attr in ("apellidos", "apellido"):
-        if hasattr(a, attr) and getattr(a, attr):
-            partes.append(str(getattr(a, attr)).strip())
-    return " ".join(partes).strip() if partes else f"Alumno #{a.id}"
+        if hasattr(alumno, attr) and getattr(alumno, attr):
+            partes.append(str(getattr(alumno, attr)).strip())
+    return " ".join(partes).strip() if partes else f"Alumno #{alumno.id}"
 
 
-def _alumno_to_dict(a: Alumno) -> dict:
+def _alumno_to_dict(alumno: Alumno) -> dict:
     return {
-        "id": a.id,
-        "identidad": _get_identidad_value(a),
-        "nombre": _get_nombre_completo(a),
-        "sucursal_id": getattr(a, "sucursal_id", None),
-        "activo": bool(getattr(a, "activo", True)),
+        "id": alumno.id,
+        "nombre": _get_nombre_completo(alumno),
+        "identidad": _get_identidad_value(alumno),
+        "sucursal_id": getattr(alumno, "sucursal_id", None),
+        "activo": bool(getattr(alumno, "activo", True)),
     }
 
 
@@ -64,30 +93,30 @@ def _estado_valido(estado: str) -> bool:
 @kiosk_bp.route("/asistencia", methods=["GET"])
 @login_required
 def asistencia():
-    """
-    Pantalla kiosko: registra asistencia por fecha y sucursal, para alumnos.
-    """
     fecha = _parse_fecha(request.args.get("fecha"))
+    sucursales = _sucursales_disponibles()
 
-    # Sucursales para selector
-    sucursales = Sucursal.query.order_by(Sucursal.nombre.asc()).all()
+    sucursal_id = _sucursal_valida_para_usuario(
+        request.args.get("sucursal_id", type=int),
+        sucursales,
+    )
 
-    # Sucursal por defecto:
-    # 1) si el user tiene sucursal_id, úsala; si no, la primera.
-    sucursal_id = request.args.get("sucursal_id", type=int)
-    if not sucursal_id:
-        sucursal_id = getattr(current_user, "sucursal_id", None)
-    if not sucursal_id and sucursales:
+    if sucursal_id is None:
+        sucursal_id = _sucursal_valida_para_usuario(
+            getattr(current_user, "sucursal_id", None),
+            sucursales,
+        )
+
+    if sucursal_id is None and sucursales:
         sucursal_id = sucursales[0].id
 
     return render_template(
         "kiosk/asistencia.html",
         fecha=fecha,
         sucursales=sucursales,
-        sucursal_id=sucursal_id
+        sucursal_id=sucursal_id,
     )
 
-from sqlalchemy import or_, cast, String
 
 @kiosk_bp.route("/buscar", methods=["GET"])
 @login_required
@@ -96,17 +125,13 @@ def buscar():
     sucursal_id = request.args.get("sucursal_id", type=int)
 
     if len(q) < 2:
-        return jsonify({"ok": True, "data": []})
+        return jsonify({"ok": True, "data": [], "warning": None})
 
     filtros = []
-
-    # ---- Identidad (blindado con CAST a texto) ----
     for attr in ("numero_identidad", "identidad", "cedula", "dni", "documento", "num_documento"):
         if hasattr(Alumno, attr):
-            col = getattr(Alumno, attr)
-            filtros.append(cast(col, String).like(f"%{q}%"))
+            filtros.append(cast(getattr(Alumno, attr), String).ilike(f"%{q}%"))
 
-    # ---- Nombres / Apellidos ----
     for attr in ("nombres", "nombre", "apellidos", "apellido"):
         if hasattr(Alumno, attr):
             filtros.append(getattr(Alumno, attr).ilike(f"%{q}%"))
@@ -114,23 +139,37 @@ def buscar():
     if not filtros:
         return jsonify({"ok": False, "error": "No hay campos buscables en Alumno."}), 500
 
-    query = Alumno.query.filter(or_(*filtros))
+    academia_id = _current_academia_id()
 
-    # ---- Filtro por academia (tu tabla tiene academia_id) ----
-    if hasattr(Alumno, "academia_id") and hasattr(current_user, "academia_id"):
-        if current_user.academia_id:
-            query = query.filter(Alumno.academia_id == current_user.academia_id)
-
-    # ---- Activos (tu activo es 1/0) ----
+    base_query = Alumno.query.filter(or_(*filtros))
+    if academia_id and hasattr(Alumno, "academia_id"):
+        base_query = base_query.filter(Alumno.academia_id == academia_id)
     if hasattr(Alumno, "activo"):
-        query = query.filter(Alumno.activo == 1)
+        base_query = base_query.filter(Alumno.activo == True)
 
-    # ---- Sucursal ----
+    warning = None
+    query = base_query
     if sucursal_id and hasattr(Alumno, "sucursal_id"):
         query = query.filter(Alumno.sucursal_id == sucursal_id)
 
-    alumnos = query.order_by(Alumno.id.desc()).limit(12).all()
-    return jsonify({"ok": True, "data": [_alumno_to_dict(a) for a in alumnos]})
+    alumnos = query.order_by(Alumno.apellidos.asc(), Alumno.nombres.asc()).limit(12).all()
+
+    if not alumnos and sucursal_id:
+        warning = f"No hay alumnos activos en la sucursal seleccionada (ID {sucursal_id})."
+        if DEMO_ALLOW_CROSS_BRANCH_SEARCH:
+            alumnos = base_query.order_by(Alumno.apellidos.asc(), Alumno.nombres.asc()).limit(12).all()
+            if alumnos:
+                warning = (
+                    f"No hay alumnos en la sucursal seleccionada (ID {sucursal_id}). "
+                    "Mostrando coincidencias de toda la academia por modo demo."
+                )
+
+    return jsonify({
+        "ok": True,
+        "data": [_alumno_to_dict(alumno) for alumno in alumnos],
+        "warning": warning,
+    })
+
 
 @kiosk_bp.route("/marcar", methods=["POST"])
 @csrf.exempt
@@ -139,8 +178,8 @@ def marcar():
     payload = request.get_json(silent=True) or {}
 
     alumno_id = payload.get("alumno_id")
-    fecha = _parse_fecha(payload.get("fecha"))
     sucursal_id = payload.get("sucursal_id")
+    fecha_raw = payload.get("fecha")
     estado = (payload.get("estado") or "P").strip().upper()
     observacion = (payload.get("observacion") or "").strip() or None
 
@@ -149,25 +188,41 @@ def marcar():
     if not sucursal_id:
         return jsonify({"ok": False, "error": "sucursal_id es requerido"}), 400
     if not _estado_valido(estado):
-        return jsonify({"ok": False, "error": "estado inválido (use P/A/T/J)"}), 400
+        return jsonify({"ok": False, "error": "estado invalido (use P/A/T/J)"}), 400
+
+    fecha = _parse_fecha_strict(fecha_raw)
+    if not fecha:
+        return jsonify({"ok": False, "error": "fecha invalida (use YYYY-MM-DD)"}), 400
 
     alumno = Alumno.query.get(alumno_id)
     if not alumno:
         return jsonify({"ok": False, "error": "Alumno no existe"}), 404
 
-    suc = Sucursal.query.get(sucursal_id)
-    if not suc:
+    sucursal = Sucursal.query.get(sucursal_id)
+    if not sucursal:
         return jsonify({"ok": False, "error": "Sucursal no existe"}), 404
 
-    # ✅ academia_id desde sucursal (confiable)
-    academia_id = getattr(suc, "academia_id", None)
+    academia_usuario = _current_academia_id()
+    academia_alumno = getattr(alumno, "academia_id", None)
+    academia_sucursal = getattr(sucursal, "academia_id", None)
+
+    if academia_usuario and academia_alumno != academia_usuario:
+        return jsonify({"ok": False, "error": "El alumno no pertenece a tu academia"}), 403
+    if academia_usuario and academia_sucursal != academia_usuario:
+        return jsonify({"ok": False, "error": "La sucursal no pertenece a tu academia"}), 403
+    if academia_alumno and academia_sucursal and academia_alumno != academia_sucursal:
+        return jsonify({"ok": False, "error": "Alumno y sucursal no pertenecen a la misma academia"}), 400
+    if getattr(alumno, "sucursal_id", None) and alumno.sucursal_id != sucursal.id:
+        return jsonify({"ok": False, "error": "El alumno no pertenece a la sucursal seleccionada"}), 400
+
+    academia_id = academia_sucursal or academia_alumno or academia_usuario
     if not academia_id:
-        return jsonify({"ok": False, "error": "Sucursal sin academia_id"}), 400
+        return jsonify({"ok": False, "error": "No se pudo determinar la academia de la asistencia"}), 400
 
     asistencia = Asistencia.query.filter_by(
         fecha=fecha,
-        alumno_id=alumno_id,
-        sucursal_id=sucursal_id
+        alumno_id=alumno.id,
+        sucursal_id=sucursal.id,
     ).first()
 
     if asistencia:
@@ -178,20 +233,23 @@ def marcar():
     else:
         asistencia = Asistencia(
             fecha=fecha,
-            alumno_id=alumno_id,
-            sucursal_id=sucursal_id,
+            alumno_id=alumno.id,
+            sucursal_id=sucursal.id,
+            academia_id=academia_id,
             registrado_por_id=current_user.id,
             estado=estado,
             observacion=observacion,
-            academia_id=academia_id
         )
         db.session.add(asistencia)
 
     db.session.commit()
 
-        # --- Aviso mensualidad (regla cliente) ---
-    pagada = mensualidad_pagada(alumno_id=alumno.id, sucursal_id=sucursal_id, fecha=fecha)
-    aviso = aviso_mensualidad(fecha, pagada)
+    aviso = ""
+    try:
+        pagada = mensualidad_pagada(alumno_id=alumno.id, sucursal_id=sucursal.id, fecha=fecha)
+        aviso = aviso_mensualidad(fecha, pagada)
+    except Exception:
+        aviso = ""
 
     return jsonify({
         "ok": True,
@@ -199,10 +257,10 @@ def marcar():
         "aviso": aviso,
         "data": {
             "fecha": fecha.isoformat(),
-            "alumno_id": alumno_id,
-            "sucursal_id": sucursal_id,
+            "alumno_id": alumno.id,
+            "sucursal_id": sucursal.id,
             "academia_id": academia_id,
             "estado": estado,
-            "observacion": observacion
-        }
+            "observacion": observacion,
+        },
     })
