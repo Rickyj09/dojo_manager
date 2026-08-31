@@ -1,28 +1,94 @@
 {% extends "base.html" %}
+
 {% block title %}Mi perfil{% endblock %}
 
 {% block content %}
-<h3>Mi perfil</h3>
 
-<p><strong>Usuario:</strong> {{ user.username }}</p>
-<p><strong>Email:</strong> {{ user.email }}</p>
+<div class="container py-4">
 
-<hr>
+  <h3 class="mb-4">Mi perfil</h3>
 
-<h5>Cambiar contraseña</h5>
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <p class="mb-2">
+        <strong>Usuario:</strong> {{ user.username }}
+      </p>
 
-<form method="post">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="mb-3">
-    <input type="password" name="current_password" class="form-control" placeholder="Contraseña actual" required>
-  </div>
-  <div class="mb-3">
-    <input type="password" name="new_password" class="form-control" placeholder="Nueva contraseña" required>
-  </div>
-  <div class="mb-3">
-    <input type="password" name="confirm_password" class="form-control" placeholder="Confirmar nueva contraseña" required>
+      <p class="mb-0">
+        <strong>Email:</strong> {{ user.email }}
+      </p>
+    </div>
   </div>
 
-  <button class="btn btn-success">Guardar</button>
-</form>
+  <div class="card shadow-sm">
+    <div class="card-header">
+      <h5 class="mb-0">Cambiar contraseña</h5>
+    </div>
+
+    <div class="card-body">
+
+      <form method="post">
+        <input
+          type="hidden"
+          name="csrf_token"
+          value="{{ csrf_token() }}"
+        >
+
+        <div class="mb-3">
+          <label class="form-label">Contraseña actual</label>
+
+          <input
+            type="password"
+            name="password_actual"
+            class="form-control"
+            placeholder="Ingresa tu contraseña actual"
+            autocomplete="current-password"
+            required
+          >
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Nueva contraseña</label>
+
+          <input
+            type="password"
+            name="password_nueva"
+            class="form-control"
+            placeholder="Ingresa la nueva contraseña"
+            autocomplete="new-password"
+            minlength="8"
+            required
+          >
+
+          <div class="form-text">
+            La contraseña debe tener al menos 8 caracteres.
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Confirmar nueva contraseña</label>
+
+          <input
+            type="password"
+            name="password_confirmar"
+            class="form-control"
+            placeholder="Repite la nueva contraseña"
+            autocomplete="new-password"
+            minlength="8"
+            required
+          >
+        </div>
+
+        <button type="submit" class="btn btn-success">
+          <i class="bi bi-check-circle me-1"></i>
+          Guardar contraseña
+        </button>
+
+      </form>
+
+    </div>
+  </div>
+
+</div>
+
 {% endblock %}
