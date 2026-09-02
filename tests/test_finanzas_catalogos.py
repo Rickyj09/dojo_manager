@@ -63,7 +63,7 @@ def _crear_tarifa(db, academia_id, tarifario, plan, frecuencia, valor):
     return tarifa
 
 
-def _crear_regla(db, academia_id, codigo, porcentaje, cantidad_minima):
+def _crear_regla(db, academia_id, codigo, porcentaje, cantidad_minima, decimales_redondeo=2):
     regla = ReglaDescuento(
         academia_id=academia_id,
         codigo=codigo,
@@ -71,6 +71,7 @@ def _crear_regla(db, academia_id, codigo, porcentaje, cantidad_minima):
         tipo="HERMANOS",
         porcentaje=Decimal(porcentaje),
         cantidad_minima=cantidad_minima,
+        decimales_redondeo=decimales_redondeo,
     )
     db.session.add(regla)
     db.session.flush()
@@ -218,12 +219,25 @@ def test_redondeo_financiero_definido():
     assert redondear_dinero(Decimal("33.335")) == Decimal("33.34")
 
 
-def test_borjas_lions_demuestra_necesidad_de_override_oficial():
-    valor_matematico = redondear_dinero(Decimal("55.00") * Decimal("0.85"))
+def test_borjas_lions_se_reproduce_con_redondeo_a_cero_decimales(db, base_data):
+    academia_id = base_data["academia_a"].id
+    tarifario = _crear_tarifario_base(db, academia_id)
+    plan = _crear_plan(db, academia_id, "REGULAR")
+    frecuencia = _crear_frecuencia(db, academia_id, "D2", 2)
+    _crear_tarifa(db, academia_id, tarifario, plan, frecuencia, "55.00")
+    regla = _crear_regla(db, academia_id, "HERMANOS_3", "15.00", 3, decimales_redondeo=0)
+    db.session.commit()
+
+    resultado = calcular_tarifa(
+        academia_id=academia_id,
+        tarifario_id=tarifario.id,
+        plan_id=plan.id,
+        frecuencia_id=frecuencia.id,
+        contexto_descuentos={"reglas_descuento_ids": [regla.id], "cantidad_alumnos": 3},
+    )
     valor_oficial_publicado = Decimal("47.00")
 
-    assert valor_matematico == Decimal("46.75")
-    assert valor_matematico != valor_oficial_publicado
+    assert resultado.valor_final == valor_oficial_publicado
 
 
 def test_tarifario_historico_no_se_modifica_por_calculo(db, base_data):
