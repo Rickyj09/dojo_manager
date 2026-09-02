@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+import os
 
 import pytest
 
@@ -21,6 +22,7 @@ from app.models.user import User
 
 @pytest.fixture(scope="session")
 def app():
+    os.environ["DATABASE_URL"] = "sqlite:///:memory:"
     test_app = create_app()
     test_app.config.update(
         TESTING=True,
