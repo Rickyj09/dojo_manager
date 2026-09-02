@@ -24,7 +24,10 @@ from .examenes import (
 )
 from .ascenso import Ascenso
 from .finanzas import (
+    AlumnoGrupoFamiliar,
+    AlumnoPlanFinanciero,
     FrecuenciaEntrenamiento,
+    GrupoFamiliar,
     PlanFinanciero,
     ReglaDescuento,
     TarifaPlan,

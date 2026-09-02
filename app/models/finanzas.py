@@ -112,6 +112,7 @@ class ReglaDescuento(TenantMixin, db.Model):
     porcentaje = db.Column(db.Numeric(5, 2), nullable=True)
     valor_fijo = db.Column(db.Numeric(10, 2), nullable=True)
     cantidad_minima = db.Column(db.Integer, nullable=True)
+    decimales_redondeo = db.Column(db.Integer, nullable=False, default=2)
     requiere_autorizacion = db.Column(db.Boolean, nullable=False, default=False)
     activo = db.Column(db.Boolean, nullable=False, default=True)
     vigencia_desde = db.Column(db.Date, nullable=True)
@@ -123,6 +124,7 @@ class ReglaDescuento(TenantMixin, db.Model):
         db.CheckConstraint("porcentaje IS NULL OR (porcentaje >= 0 AND porcentaje <= 100)", name="ck_reglas_descuento_porcentaje_rango"),
         db.CheckConstraint("valor_fijo IS NULL OR valor_fijo >= 0", name="ck_reglas_descuento_valor_fijo_no_negativo"),
         db.CheckConstraint("cantidad_minima IS NULL OR cantidad_minima >= 0", name="ck_reglas_descuento_cantidad_no_negativa"),
+        db.CheckConstraint("decimales_redondeo >= 0 AND decimales_redondeo <= 4", name="ck_reglas_descuento_decimales_rango"),
         db.CheckConstraint("porcentaje IS NULL OR valor_fijo IS NULL", name="ck_reglas_descuento_un_modo"),
         db.CheckConstraint("vigencia_hasta IS NULL OR vigencia_desde IS NULL OR vigencia_hasta >= vigencia_desde", name="ck_reglas_descuento_fechas_coherentes"),
     )
@@ -148,6 +150,111 @@ class ReglaDescuento(TenantMixin, db.Model):
         if value < 0:
             raise ValueError("El valor fijo no puede ser negativo")
         return value
+
+    @validates("decimales_redondeo")
+    def _validar_decimales_redondeo(self, key, value):
+        value = int(value)
+        if value < 0 or value > 4:
+            raise ValueError("Los decimales de redondeo deben estar entre 0 y 4")
+        return value
+
+
+class GrupoFamiliar(TenantMixin, db.Model):
+    __tablename__ = "grupos_familiares"
+
+    id = db.Column(db.Integer, primary_key=True)
+    codigo = db.Column(db.String(50), nullable=False)
+    nombre = db.Column(db.String(120), nullable=False)
+    activo = db.Column(db.Boolean, nullable=False, default=True)
+    observaciones = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=True, onupdate=datetime.utcnow)
+
+    alumnos = db.relationship("AlumnoGrupoFamiliar", back_populates="grupo_familiar")
+
+    __table_args__ = (
+        db.UniqueConstraint("academia_id", "codigo", name="uq_grupos_familiares_academia_codigo"),
+        db.Index("ix_grupos_familiares_academia_activo", "academia_id", "activo"),
+    )
+
+    @validates("codigo")
+    def _validar_codigo(self, key, value):
+        return normalizar_codigo(value)
+
+
+class AlumnoGrupoFamiliar(TenantMixin, db.Model):
+    __tablename__ = "alumnos_grupos_familiares"
+
+    id = db.Column(db.Integer, primary_key=True)
+    grupo_familiar_id = db.Column(db.Integer, db.ForeignKey("grupos_familiares.id"), nullable=False)
+    alumno_id = db.Column(db.Integer, db.ForeignKey("alumnos.id"), nullable=False)
+    fecha_inicio = db.Column(db.Date, nullable=False)
+    fecha_fin = db.Column(db.Date, nullable=True)
+    activo = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    grupo_familiar = db.relationship("GrupoFamiliar", back_populates="alumnos")
+    alumno = db.relationship("Alumno")
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "academia_id",
+            "grupo_familiar_id",
+            "alumno_id",
+            "fecha_inicio",
+            name="uq_alumnos_grupos_familiares_membresia",
+        ),
+        db.Index("ix_alumnos_grupos_familiares_alumno_activo", "academia_id", "alumno_id", "activo"),
+        db.Index("ix_alumnos_grupos_familiares_grupo_activo", "academia_id", "grupo_familiar_id", "activo"),
+        db.CheckConstraint("fecha_fin IS NULL OR fecha_fin >= fecha_inicio", name="ck_alumnos_grupos_familiares_fechas"),
+    )
+
+
+class AlumnoPlanFinanciero(TenantMixin, db.Model):
+    __tablename__ = "alumnos_planes_financieros"
+
+    id = db.Column(db.Integer, primary_key=True)
+    alumno_id = db.Column(db.Integer, db.ForeignKey("alumnos.id"), nullable=False)
+    plan_id = db.Column(db.Integer, db.ForeignKey("planes_financieros.id"), nullable=False)
+    frecuencia_id = db.Column(db.Integer, db.ForeignKey("frecuencias_entrenamiento.id"), nullable=False)
+    tarifario_id = db.Column(db.Integer, db.ForeignKey("tarifarios.id"), nullable=False)
+    tarifa_plan_id = db.Column(db.Integer, db.ForeignKey("tarifas_plan.id"), nullable=False)
+    grupo_familiar_id = db.Column(db.Integer, db.ForeignKey("grupos_familiares.id"), nullable=True)
+    regla_descuento_id = db.Column(db.Integer, db.ForeignKey("reglas_descuento.id"), nullable=True)
+    fecha_inicio = db.Column(db.Date, nullable=False)
+    fecha_fin = db.Column(db.Date, nullable=True)
+    tarifa_base_snapshot = db.Column(db.Numeric(10, 2), nullable=False)
+    descuento_porcentaje_snapshot = db.Column(db.Numeric(5, 2), nullable=True)
+    descuento_valor_snapshot = db.Column(db.Numeric(10, 2), nullable=False, default=Decimal("0.00"))
+    valor_final_snapshot = db.Column(db.Numeric(10, 2), nullable=False)
+    moneda_snapshot = db.Column(db.String(3), nullable=False)
+    estado = db.Column(
+        db.Enum("ACTIVO", "FINALIZADO", "CANCELADO", name="fin_alumno_plan_estado", native_enum=False),
+        nullable=False,
+        default="ACTIVO",
+    )
+    motivo = db.Column(db.Text, nullable=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=True, onupdate=datetime.utcnow)
+
+    alumno = db.relationship("Alumno")
+    plan = db.relationship("PlanFinanciero")
+    frecuencia = db.relationship("FrecuenciaEntrenamiento")
+    tarifario = db.relationship("Tarifario")
+    tarifa_plan = db.relationship("TarifaPlan")
+    grupo_familiar = db.relationship("GrupoFamiliar")
+    regla_descuento = db.relationship("ReglaDescuento")
+    created_by = db.relationship("User")
+
+    __table_args__ = (
+        db.Index("ix_alumnos_planes_financieros_alumno_estado", "academia_id", "alumno_id", "estado"),
+        db.Index("ix_alumnos_planes_financieros_fechas", "academia_id", "fecha_inicio", "fecha_fin"),
+        db.CheckConstraint("fecha_fin IS NULL OR fecha_fin >= fecha_inicio", name="ck_alumnos_planes_financieros_fechas"),
+        db.CheckConstraint("tarifa_base_snapshot >= 0", name="ck_alumnos_planes_financieros_tarifa_no_negativa"),
+        db.CheckConstraint("descuento_valor_snapshot >= 0", name="ck_alumnos_planes_financieros_descuento_no_negativo"),
+        db.CheckConstraint("valor_final_snapshot >= 0", name="ck_alumnos_planes_financieros_final_no_negativo"),
+    )
 
 
 class TarifaPlan(TenantMixin, db.Model):

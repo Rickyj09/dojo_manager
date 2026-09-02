@@ -14,8 +14,13 @@ class ResultadoCalculoTarifa:
     valor_final: Decimal = Decimal("0.00")
 
 
+def redondear_decimal(value: Decimal, decimales: int = 2) -> Decimal:
+    quantum = Decimal("1").scaleb(-int(decimales))
+    return Decimal(value).quantize(quantum, rounding=ROUND_HALF_UP)
+
+
 def redondear_dinero(value: Decimal) -> Decimal:
-    return Decimal(value).quantize(CENTAVO, rounding=ROUND_HALF_UP)
+    return redondear_decimal(value, 2)
 
 
 def _regla_aplica(regla: ReglaDescuento, contexto_descuentos: dict) -> bool:
@@ -29,6 +34,13 @@ def _regla_aplica(regla: ReglaDescuento, contexto_descuentos: dict) -> bool:
     cantidad_alumnos = contexto_descuentos.get("cantidad_alumnos")
     if regla.tipo == "HERMANOS" and regla.cantidad_minima is not None:
         if cantidad_alumnos is None or int(cantidad_alumnos) < regla.cantidad_minima:
+            return False
+
+    fecha = contexto_descuentos.get("fecha")
+    if fecha is not None:
+        if regla.vigencia_desde is not None and fecha < regla.vigencia_desde:
+            return False
+        if regla.vigencia_hasta is not None and fecha > regla.vigencia_hasta:
             return False
 
     return True
@@ -80,9 +92,13 @@ def calcular_tarifa(
 
         descuento = Decimal("0.00")
         if regla.porcentaje is not None:
-            descuento = redondear_dinero(valor_actual * Decimal(regla.porcentaje) / Decimal("100"))
+            valor_con_descuento = valor_actual * (Decimal("100") - Decimal(regla.porcentaje)) / Decimal("100")
+            valor_con_descuento = redondear_decimal(valor_con_descuento, regla.decimales_redondeo)
+            valor_con_descuento = redondear_dinero(valor_con_descuento)
+            descuento = redondear_dinero(valor_actual - valor_con_descuento)
         elif regla.valor_fijo is not None:
-            descuento = redondear_dinero(regla.valor_fijo)
+            descuento = redondear_decimal(regla.valor_fijo, regla.decimales_redondeo)
+            descuento = redondear_dinero(descuento)
 
         if descuento <= 0:
             continue
