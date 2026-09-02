@@ -23,6 +23,13 @@ from .examenes import (
     ExamenAlumno, ExamenAlumnoPregunta, ExamenDictamen
 )
 from .ascenso import Ascenso
+from .finanzas import (
+    FrecuenciaEntrenamiento,
+    PlanFinanciero,
+    ReglaDescuento,
+    TarifaPlan,
+    Tarifario,
+)
 
 
 
