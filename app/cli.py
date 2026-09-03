@@ -11,6 +11,7 @@ from app.models.role import Role
 # tu comando existente
 from app.models.categoria import Categoria
 from app.models.categoriascompetencia import CategoriaCompetencia
+from app.services.finanzas import FinanzasError, generar_obligaciones_mensuales, parsear_periodo
 
 
 @click.command("seed-karate-categorias")
@@ -67,6 +68,36 @@ def seed_academia(academia, ciudad, sucursal, direccion, username, email, passwo
     click.echo(f"✅ OK: academia={a.id}, sucursal={s.id}, admin={u.id} ({u.username})")
 
 
+@click.group("finanzas")
+def finanzas_cli():
+    """Comandos financieros."""
+
+
+@finanzas_cli.command("generar-pensiones")
+@click.option("--academia-id", required=True, type=int)
+@click.option("--periodo", required=True)
+@with_appcontext
+def generar_pensiones(academia_id: int, periodo: str):
+    try:
+        parsear_periodo(periodo)
+        resumen = generar_obligaciones_mensuales(academia_id=academia_id, periodo=periodo)
+        db.session.commit()
+    except FinanzasError as exc:
+        db.session.rollback()
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo(f"Periodo: {resumen.periodo}")
+    click.echo(f"Academia: {resumen.academia_id}")
+    click.echo(f"Alumnos evaluados: {resumen.evaluados}")
+    click.echo(f"Obligaciones creadas: {resumen.creados}")
+    click.echo(f"Ya existentes: {resumen.existentes}")
+    click.echo(f"Sin plan financiero: {resumen.sin_plan}")
+    click.echo(f"Errores: {len(resumen.errores)}")
+    for error in resumen.errores:
+        click.echo(f"- Alumno {error['alumno_id']}: {error['error']}")
+
+
 def register_cli(app):
     app.cli.add_command(seed_karate_categorias)
     app.cli.add_command(seed_academia)
+    app.cli.add_command(finanzas_cli)

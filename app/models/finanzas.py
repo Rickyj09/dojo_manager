@@ -257,6 +257,63 @@ class AlumnoPlanFinanciero(TenantMixin, db.Model):
     )
 
 
+class ObligacionFinanciera(TenantMixin, db.Model):
+    __tablename__ = "obligaciones_financieras"
+
+    id = db.Column(db.Integer, primary_key=True)
+    alumno_id = db.Column(db.Integer, db.ForeignKey("alumnos.id"), nullable=False)
+    alumno_plan_financiero_id = db.Column(db.Integer, db.ForeignKey("alumnos_planes_financieros.id"), nullable=True)
+    periodo = db.Column(db.String(7), nullable=False)
+    tipo_obligacion = db.Column(
+        db.Enum(
+            "PENSION",
+            "MATRICULA",
+            "EXAMEN_GRADO",
+            "UNIFORME",
+            "TORNEO",
+            "SEMINARIO",
+            "OTRO",
+            name="fin_obligacion_tipo",
+            native_enum=False,
+        ),
+        nullable=False,
+    )
+    concepto = db.Column(db.String(160), nullable=False)
+    origen = db.Column(db.String(80), nullable=True)
+    fecha_emision = db.Column(db.Date, nullable=False)
+    fecha_vencimiento = db.Column(db.Date, nullable=True)
+    tarifa_base_snapshot = db.Column(db.Numeric(10, 2), nullable=False)
+    porcentaje_descuento_snapshot = db.Column(db.Numeric(5, 2), nullable=True)
+    valor_descuento_snapshot = db.Column(db.Numeric(10, 2), nullable=False, default=Decimal("0.00"))
+    valor_final_snapshot = db.Column(db.Numeric(10, 2), nullable=False)
+    moneda_snapshot = db.Column(db.String(3), nullable=False)
+    estado = db.Column(
+        db.Enum("PENDIENTE", "ANULADA", name="fin_obligacion_estado", native_enum=False),
+        nullable=False,
+        default="PENDIENTE",
+    )
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=True, onupdate=datetime.utcnow)
+
+    alumno = db.relationship("Alumno")
+    alumno_plan_financiero = db.relationship("AlumnoPlanFinanciero")
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "academia_id",
+            "alumno_id",
+            "periodo",
+            "tipo_obligacion",
+            name="uq_obligaciones_financieras_academia_alumno_periodo_tipo",
+        ),
+        db.Index("ix_obligaciones_financieras_periodo_estado", "academia_id", "periodo", "estado"),
+        db.Index("ix_obligaciones_financieras_alumno_periodo", "academia_id", "alumno_id", "periodo"),
+        db.CheckConstraint("tarifa_base_snapshot >= 0", name="ck_obligaciones_financieras_tarifa_no_negativa"),
+        db.CheckConstraint("valor_descuento_snapshot >= 0", name="ck_obligaciones_financieras_descuento_no_negativo"),
+        db.CheckConstraint("valor_final_snapshot >= 0", name="ck_obligaciones_financieras_final_no_negativo"),
+    )
+
+
 class TarifaPlan(TenantMixin, db.Model):
     __tablename__ = "tarifas_plan"
 
