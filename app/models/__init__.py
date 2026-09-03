@@ -29,6 +29,8 @@ from .finanzas import (
     FrecuenciaEntrenamiento,
     GrupoFamiliar,
     ObligacionFinanciera,
+    PagoAplicacion,
+    PagoFinanciero,
     PlanFinanciero,
     ReglaDescuento,
     TarifaPlan,

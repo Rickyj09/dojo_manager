@@ -13,4 +13,14 @@ from .obligaciones import (
     obtener_plan_financiero_vigente,
     parsear_periodo,
 )
+from .pagos import (
+    anular_pago,
+    aplicar_pago,
+    calcular_saldo_obligacion,
+    calcular_saldo_pago,
+    calcular_total_aplicado_pago,
+    calcular_total_pagado_obligacion,
+    obtener_estado_pago_obligacion,
+    registrar_pago,
+)
 from .tarifas import ResultadoCalculoTarifa, calcular_tarifa

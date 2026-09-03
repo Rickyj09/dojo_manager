@@ -314,6 +314,78 @@ class ObligacionFinanciera(TenantMixin, db.Model):
     )
 
 
+class PagoFinanciero(TenantMixin, db.Model):
+    __tablename__ = "pagos_financieros"
+
+    id = db.Column(db.Integer, primary_key=True)
+    alumno_id = db.Column(db.Integer, db.ForeignKey("alumnos.id"), nullable=False)
+    fecha_pago = db.Column(db.Date, nullable=False)
+    valor = db.Column(db.Numeric(10, 2), nullable=False)
+    moneda = db.Column(db.String(3), nullable=False, default="USD")
+    medio_pago = db.Column(
+        db.Enum("EFECTIVO", "TRANSFERENCIA", "DEPOSITO", "TARJETA", "OTRO", name="fin_pago_medio", native_enum=False),
+        nullable=False,
+    )
+    referencia = db.Column(db.String(120), nullable=True)
+    observacion = db.Column(db.Text, nullable=True)
+    estado = db.Column(
+        db.Enum("REGISTRADO", "ANULADO", name="fin_pago_estado", native_enum=False),
+        nullable=False,
+        default="REGISTRADO",
+    )
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=True, onupdate=datetime.utcnow)
+
+    alumno = db.relationship("Alumno")
+    aplicaciones = db.relationship("PagoAplicacion", back_populates="pago")
+
+    __table_args__ = (
+        db.Index("ix_pagos_financieros_academia_fecha", "academia_id", "fecha_pago"),
+        db.Index("ix_pagos_financieros_alumno_estado", "academia_id", "alumno_id", "estado"),
+        db.CheckConstraint("valor > 0", name="ck_pagos_financieros_valor_positivo"),
+    )
+
+    @validates("valor")
+    def _validar_valor(self, key, value):
+        value = Decimal(value)
+        if value <= 0:
+            raise ValueError("El valor del pago debe ser mayor a cero")
+        return value
+
+    @validates("moneda")
+    def _validar_moneda(self, key, value):
+        value = (value or "USD").strip().upper()
+        if len(value) != 3:
+            raise ValueError("La moneda debe usar codigo ISO de 3 letras")
+        return value
+
+
+class PagoAplicacion(TenantMixin, db.Model):
+    __tablename__ = "pagos_aplicaciones"
+
+    id = db.Column(db.Integer, primary_key=True)
+    pago_id = db.Column(db.Integer, db.ForeignKey("pagos_financieros.id"), nullable=False)
+    obligacion_financiera_id = db.Column(db.Integer, db.ForeignKey("obligaciones_financieras.id"), nullable=False)
+    valor_aplicado = db.Column(db.Numeric(10, 2), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    pago = db.relationship("PagoFinanciero", back_populates="aplicaciones")
+    obligacion_financiera = db.relationship("ObligacionFinanciera")
+
+    __table_args__ = (
+        db.Index("ix_pagos_aplicaciones_pago", "academia_id", "pago_id"),
+        db.Index("ix_pagos_aplicaciones_obligacion", "academia_id", "obligacion_financiera_id"),
+        db.CheckConstraint("valor_aplicado > 0", name="ck_pagos_aplicaciones_valor_positivo"),
+    )
+
+    @validates("valor_aplicado")
+    def _validar_valor_aplicado(self, key, value):
+        value = Decimal(value)
+        if value <= 0:
+            raise ValueError("El valor aplicado debe ser mayor a cero")
+        return value
+
+
 class TarifaPlan(TenantMixin, db.Model):
     __tablename__ = "tarifas_plan"
 
