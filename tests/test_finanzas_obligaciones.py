@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from app.models.alumno import Alumno
 from app.models.finanzas import (
     AlumnoPlanFinanciero,
+    ConfiguracionFinanciera,
     FrecuenciaEntrenamiento,
     ObligacionFinanciera,
     PlanFinanciero,
@@ -16,6 +17,7 @@ from app.models.finanzas import (
 from app.services.finanzas.asignaciones import asignar_plan_financiero
 from app.services.finanzas.familias import FinanzasError
 from app.services.finanzas.obligaciones import generar_obligaciones_mensuales, parsear_periodo
+from app.services.finanzas.vencimientos import calcular_fecha_vencimiento_pension
 
 
 def crear_plan(db, academia_id, codigo="REGULAR"):
@@ -100,6 +102,65 @@ def test_genera_pension_correctamente(db, base_data):
     assert obligacion.concepto == "Pension 2026-09"
     assert obligacion.estado == "PENDIENTE"
     assert obligacion.fecha_emision == date(2026, 9, 1)
+    assert obligacion.fecha_vencimiento is None
+
+
+def test_dia_10_genera_vencimiento_dia_10(db, base_data):
+    academia_id, _asignacion = preparar_asignacion(db, base_data)
+    db.session.add(ConfiguracionFinanciera(academia_id=academia_id, dia_vencimiento_pension=10))
+    db.session.commit()
+
+    generar_obligaciones_mensuales(academia_id=academia_id, periodo="2026-09")
+    db.session.commit()
+
+    obligacion = ObligacionFinanciera.query.filter_by(academia_id=academia_id, periodo="2026-09").one()
+    assert obligacion.fecha_vencimiento == date(2026, 9, 10)
+
+
+@pytest.mark.parametrize(
+    "periodo,fecha_esperada",
+    [
+        ("2026-01", date(2026, 1, 31)),
+        ("2026-04", date(2026, 4, 30)),
+        ("2026-02", date(2026, 2, 28)),
+        ("2028-02", date(2028, 2, 29)),
+    ],
+)
+def test_dia_31_usa_ultimo_dia_valido_del_mes(periodo, fecha_esperada):
+    assert calcular_fecha_vencimiento_pension(periodo, 31) == fecha_esperada
+
+
+def test_configuracion_null_deja_fecha_vencimiento_null(db, base_data):
+    academia_id, _asignacion = preparar_asignacion(db, base_data)
+    db.session.add(ConfiguracionFinanciera(academia_id=academia_id, dia_vencimiento_pension=None))
+    db.session.commit()
+
+    generar_obligaciones_mensuales(academia_id=academia_id, periodo="2026-09")
+    db.session.commit()
+
+    obligacion = ObligacionFinanciera.query.filter_by(academia_id=academia_id, periodo="2026-09").one()
+    assert obligacion.fecha_vencimiento is None
+
+
+@pytest.mark.parametrize("dia_invalido", [0, 32])
+def test_dia_vencimiento_invalido_rechazado(db, base_data, dia_invalido):
+    with pytest.raises(ValueError, match="entre 1 y 31"):
+        ConfiguracionFinanciera(
+            academia_id=base_data["academia_a"].id,
+            dia_vencimiento_pension=dia_invalido,
+        )
+
+
+def test_generacion_repetida_no_actualiza_vencimiento_existente(db, base_data):
+    academia_id, _asignacion = preparar_asignacion(db, base_data)
+
+    generar_obligaciones_mensuales(academia_id=academia_id, periodo="2026-09")
+    db.session.add(ConfiguracionFinanciera(academia_id=academia_id, dia_vencimiento_pension=10))
+    db.session.commit()
+    generar_obligaciones_mensuales(academia_id=academia_id, periodo="2026-09")
+    db.session.commit()
+
+    obligacion = ObligacionFinanciera.query.filter_by(academia_id=academia_id, periodo="2026-09").one()
     assert obligacion.fecha_vencimiento is None
 
 

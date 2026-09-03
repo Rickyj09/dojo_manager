@@ -20,6 +20,12 @@ from app.services.finanzas.cartera import (
 )
 from app.services.finanzas.obligaciones import generar_obligaciones_mensuales
 from app.services.finanzas.pagos import aplicar_pago, registrar_pago
+from app.services.finanzas.vencimientos import (
+    CONDICION_SIN_VENCIMIENTO,
+    CONDICION_VENCIDA,
+    CONDICION_VIGENTE,
+    clasificar_antiguedad_cartera,
+)
 
 
 def login(client, user):
@@ -75,12 +81,20 @@ def crear_obligacion_manual(db, obligacion_ref, periodo, valor):
     return obligacion
 
 
+def fijar_vencimiento(db, obligacion, fecha_vencimiento):
+    obligacion.fecha_vencimiento = fecha_vencimiento
+    db.session.commit()
+    return obligacion
+
+
 def test_academia_sin_obligaciones(db, base_data):
     resumen = obtener_resumen_cartera_academia(academia_id=base_data["academia_a"].id)
 
     assert resumen.total_obligaciones == Decimal("0.00")
     assert resumen.total_aplicado == Decimal("0.00")
     assert resumen.saldo_pendiente == Decimal("0.00")
+    assert resumen.saldo_vencido == Decimal("0.00")
+    assert resumen.saldo_vigente == Decimal("0.00")
     assert resumen.cantidad_alumnos_con_saldo == 0
 
 
@@ -91,6 +105,7 @@ def test_obligacion_pendiente(db, base_data):
 
     assert estado.obligaciones[0].estado_derivado == "PENDIENTE"
     assert estado.saldo_pendiente == Decimal("60.00")
+    assert estado.obligaciones[0].condicion_temporal == CONDICION_SIN_VENCIMIENTO
 
 
 def test_obligacion_parcial(db, base_data):
@@ -115,6 +130,7 @@ def test_obligacion_pagada(db, base_data):
 
     assert resumen.cantidad_obligaciones_pagadas == 1
     assert resumen.saldo_pendiente == Decimal("0.00")
+    assert resumen.saldo_vencido == Decimal("0.00")
 
 
 def test_obligacion_anulada_excluida_del_saldo(db, base_data):
@@ -185,6 +201,7 @@ def test_total_academia_correcto(db, base_data):
     assert resumen.total_obligaciones == Decimal("100.00")
     assert resumen.total_aplicado == Decimal("30.00")
     assert resumen.saldo_pendiente == Decimal("70.00")
+    assert resumen.saldo_sin_vencimiento == Decimal("70.00")
 
 
 def test_total_alumno_correcto(db, base_data):
@@ -272,6 +289,21 @@ def test_vista_cartera_filtros_basicos(app, db, base_data):
     assert b"Maria" not in response.data
 
 
+def test_vista_cartera_filtro_vencidos(app, db, base_data):
+    obligacion_1 = crear_plan_y_obligacion(db, base_data, alumno_key="alumno_a1", valor="60.00")
+    obligacion_2 = crear_plan_y_obligacion(db, base_data, alumno_key="alumno_a2", valor="40.00", codigo="DESARROLLO")
+    fijar_vencimiento(db, obligacion_1, date(2026, 1, 1))
+    fijar_vencimiento(db, obligacion_2, date(2099, 1, 1))
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get("/finanzas/cartera?saldo=vencidos")
+
+    assert response.status_code == 200
+    assert b"Carlos" in response.data
+    assert b"Maria" not in response.data
+
+
 def test_vista_profesor_limita_cartera_a_sucursal(app, db, base_data):
     sucursal_otro = Sucursal(
         nombre="Norte A",
@@ -306,6 +338,7 @@ def test_vista_estado_cuenta(app, db, base_data):
     assert b"Estado de cuenta" in response.data
     assert b"Obligaciones" in response.data
     assert b"Pagos" in response.data
+    assert b"Sin vencimiento configurado" in response.data
 
 
 def test_vista_bloquea_alumno_de_otra_academia(app, db, base_data):
@@ -358,3 +391,213 @@ def test_vista_pago_sin_aplicar_visible(app, db, base_data):
     assert response.status_code == 200
     assert b"Saldo de pagos sin aplicar" in response.data
     assert b"50.00" in response.data
+
+
+def test_obligacion_antes_del_vencimiento_es_vigente(db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="60.00")
+    fijar_vencimiento(db, obligacion, date(2026, 9, 10))
+
+    estado = obtener_estado_cuenta_alumno(
+        academia_id=obligacion.academia_id,
+        alumno_id=obligacion.alumno_id,
+        fecha_referencia=date(2026, 9, 9),
+    )
+
+    assert estado.obligaciones[0].condicion_temporal == CONDICION_VIGENTE
+    assert estado.obligaciones[0].dias_atraso == 0
+
+
+def test_obligacion_mismo_dia_del_vencimiento_es_vigente(db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="60.00")
+    fijar_vencimiento(db, obligacion, date(2026, 9, 10))
+
+    estado = obtener_estado_cuenta_alumno(
+        academia_id=obligacion.academia_id,
+        alumno_id=obligacion.alumno_id,
+        fecha_referencia=date(2026, 9, 10),
+    )
+
+    assert estado.obligaciones[0].condicion_temporal == CONDICION_VIGENTE
+
+
+def test_obligacion_un_dia_despues_es_vencida_y_calcula_atraso(db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="60.00")
+    fijar_vencimiento(db, obligacion, date(2026, 9, 10))
+
+    estado = obtener_estado_cuenta_alumno(
+        academia_id=obligacion.academia_id,
+        alumno_id=obligacion.alumno_id,
+        fecha_referencia=date(2026, 9, 11),
+    )
+
+    assert estado.obligaciones[0].condicion_temporal == CONDICION_VENCIDA
+    assert estado.obligaciones[0].dias_atraso == 1
+
+
+def test_obligacion_pagada_no_cuenta_como_vencida(db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="60.00")
+    fijar_vencimiento(db, obligacion, date(2026, 9, 10))
+    pago = registrar_pago(academia_id=obligacion.academia_id, alumno_id=obligacion.alumno_id, fecha_pago=date(2026, 9, 11), valor=Decimal("60.00"), medio_pago="EFECTIVO")
+    aplicar_pago(academia_id=obligacion.academia_id, pago_id=pago.id, obligacion_financiera_id=obligacion.id, valor_aplicado=Decimal("60.00"))
+    db.session.commit()
+
+    resumen = obtener_resumen_cartera_academia(
+        academia_id=obligacion.academia_id,
+        fecha_referencia=date(2026, 9, 20),
+    )
+
+    assert resumen.cantidad_obligaciones_vencidas == 0
+    assert resumen.saldo_vencido == Decimal("0.00")
+
+
+def test_obligacion_anulada_no_cuenta_como_vencida(db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="60.00")
+    obligacion.fecha_vencimiento = date(2026, 9, 10)
+    obligacion.estado = "ANULADA"
+    db.session.commit()
+
+    resumen = obtener_resumen_cartera_academia(
+        academia_id=obligacion.academia_id,
+        fecha_referencia=date(2026, 9, 20),
+    )
+
+    assert resumen.cantidad_obligaciones_vencidas == 0
+    assert resumen.saldo_vencido == Decimal("0.00")
+
+
+def test_obligacion_parcial_vencida_cuenta_saldo_pendiente(db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="60.00")
+    fijar_vencimiento(db, obligacion, date(2026, 9, 10))
+    pago = registrar_pago(academia_id=obligacion.academia_id, alumno_id=obligacion.alumno_id, fecha_pago=date(2026, 9, 11), valor=Decimal("20.00"), medio_pago="EFECTIVO")
+    aplicar_pago(academia_id=obligacion.academia_id, pago_id=pago.id, obligacion_financiera_id=obligacion.id, valor_aplicado=Decimal("20.00"))
+    db.session.commit()
+
+    resumen = obtener_resumen_cartera_academia(
+        academia_id=obligacion.academia_id,
+        fecha_referencia=date(2026, 9, 20),
+    )
+
+    assert resumen.saldo_vencido == Decimal("40.00")
+    assert resumen.cantidad_obligaciones_vencidas == 1
+
+
+def test_obligacion_sin_vencimiento_se_clasifica_separada(db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="60.00")
+
+    resumen = obtener_resumen_cartera_academia(
+        academia_id=obligacion.academia_id,
+        fecha_referencia=date(2026, 9, 20),
+    )
+
+    assert resumen.saldo_sin_vencimiento == Decimal("60.00")
+    assert resumen.saldo_vencido == Decimal("0.00")
+
+
+@pytest.mark.parametrize(
+    "dias,bucket",
+    [
+        (1, "1_30"),
+        (30, "1_30"),
+        (31, "31_60"),
+        (60, "31_60"),
+        (61, "61_90"),
+        (90, "61_90"),
+        (91, "MAS_90"),
+    ],
+)
+def test_buckets_antiguedad_limites(dias, bucket):
+    assert clasificar_antiguedad_cartera(dias) == bucket
+
+
+def test_antiguedad_suma_buckets_decimal_y_aislamiento(db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="60.25")
+    fijar_vencimiento(db, obligacion, date(2026, 8, 15))
+    obligacion_b = ObligacionFinanciera(
+        academia_id=base_data["academia_b"].id,
+        alumno_id=base_data["alumno_b1"].id,
+        periodo="2026-09",
+        tipo_obligacion="PENSION",
+        concepto="Pension 2026-09",
+        origen="TEST",
+        fecha_emision=date(2026, 9, 1),
+        fecha_vencimiento=date(2026, 8, 1),
+        tarifa_base_snapshot=Decimal("99.00"),
+        valor_descuento_snapshot=Decimal("0.00"),
+        valor_final_snapshot=Decimal("99.00"),
+        moneda_snapshot="USD",
+        estado="PENDIENTE",
+    )
+    db.session.add(obligacion_b)
+    db.session.commit()
+
+    resumen = obtener_resumen_cartera_academia(
+        academia_id=obligacion.academia_id,
+        fecha_referencia=date(2026, 9, 15),
+    )
+
+    assert resumen.saldo_31_60 == Decimal("60.25")
+    assert resumen.saldo_vencido == Decimal("60.25")
+    assert isinstance(resumen.saldo_vencido, Decimal)
+
+
+def test_profesor_aislamiento_sucursal_en_resumen_vencido(app, db, base_data):
+    sucursal_otro = Sucursal(nombre="Norte A", academia_id=base_data["academia_a"].id, activo=True)
+    db.session.add(sucursal_otro)
+    db.session.flush()
+    base_data["alumno_a2"].sucursal_id = sucursal_otro.id
+    db.session.commit()
+    obligacion_1 = crear_plan_y_obligacion(db, base_data, alumno_key="alumno_a1", valor="60.00")
+    obligacion_2 = crear_plan_y_obligacion(db, base_data, alumno_key="alumno_a2", valor="40.00", codigo="DESARROLLO")
+    fijar_vencimiento(db, obligacion_1, date(2026, 1, 1))
+    fijar_vencimiento(db, obligacion_2, date(2026, 1, 1))
+    client = app.test_client()
+    login(client, base_data["profesor_a"])
+
+    response = client.get("/finanzas/cartera?saldo=vencidos")
+
+    assert response.status_code == 200
+    assert b"Carlos" in response.data
+    assert b"Maria" not in response.data
+    assert b"40.00" not in response.data
+
+
+def test_vista_estado_cuenta_muestra_vigente_vencida_y_dias(app, db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="60.00")
+    fijar_vencimiento(db, obligacion, date(2026, 1, 1))
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(f"/finanzas/alumnos/{obligacion.alumno_id}/estado-cuenta")
+
+    assert response.status_code == 200
+    assert b"VENCIDA" in response.data
+    assert b"d\xc3\xadas" in response.data
+
+
+def test_configuracion_financiera_valida_y_guarda(app, db, base_data):
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.post("/finanzas/configuracion", data={"dia_vencimiento_pension": "15"}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"15" in response.data
+
+
+def test_configuracion_financiera_rechaza_dia_invalido(app, db, base_data):
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.post("/finanzas/configuracion", data={"dia_vencimiento_pension": "32"})
+
+    assert response.status_code == 200
+    assert b"entre 1 y 31" in response.data
+
+
+def test_profesor_no_puede_configurar_finanzas(app, db, base_data):
+    client = app.test_client()
+    login(client, base_data["profesor_a"])
+
+    response = client.get("/finanzas/configuracion")
+
+    assert response.status_code == 403
