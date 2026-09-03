@@ -62,6 +62,7 @@
           <th>Aplicado</th>
           <th>Saldo</th>
           <th>Estado</th>
+          <th>Vencimiento</th>
         </tr>
       </thead>
       <tbody>
@@ -78,10 +79,23 @@
                 {{ item.estado_derivado }}
               </span>
             </td>
+            <td>
+              {% if item.condicion_temporal == "SIN_VENCIMIENTO" %}
+                <span class="text-muted">Sin vencimiento configurado</span>
+              {% else %}
+                <div>{{ item.obligacion.fecha_vencimiento.strftime("%d/%m/%Y") }}</div>
+                {% if item.condicion_temporal == "VENCIDA" %}
+                  <span class="badge bg-danger">VENCIDA</span>
+                  <small class="text-muted">{{ item.dias_atraso }} días</small>
+                {% else %}
+                  <span class="badge bg-success">VIGENTE</span>
+                {% endif %}
+              {% endif %}
+            </td>
           </tr>
         {% else %}
           <tr>
-            <td colspan="7" class="text-center text-muted">Sin obligaciones financieras</td>
+            <td colspan="8" class="text-center text-muted">Sin obligaciones financieras</td>
           </tr>
         {% endfor %}
       </tbody>

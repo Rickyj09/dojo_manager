@@ -1,0 +1,40 @@
+{% extends "base_admin.html" %}
+{% block title %}Configuracion financiera{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h3 class="mb-1">Configuracion financiera</h3>
+    <p class="text-muted mb-0">Politica de vencimiento para nuevas pensiones.</p>
+  </div>
+  <a href="{{ url_for('finanzas.cartera') }}" class="btn btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Cartera
+  </a>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label" for="dia_vencimiento_pension">Dia de vencimiento de pension</label>
+        <input
+          class="form-control"
+          id="dia_vencimiento_pension"
+          name="dia_vencimiento_pension"
+          type="number"
+          min="1"
+          max="31"
+          value="{{ configuracion.dia_vencimiento_pension if configuracion else '' }}"
+          placeholder="Sin definir"
+        >
+        <div class="form-text">Dejar vacio mantiene las nuevas pensiones sin fecha de vencimiento.</div>
+      </div>
+      <div class="col-12">
+        <button class="btn btn-primary" type="submit">
+          <i class="bi bi-save"></i> Guardar
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

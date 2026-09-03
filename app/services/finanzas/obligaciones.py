@@ -8,7 +8,9 @@ from sqlalchemy import or_
 from app.extensions import db
 from app.models.alumno import Alumno
 from app.models.finanzas import AlumnoPlanFinanciero, ObligacionFinanciera
+from app.services.finanzas.configuracion import obtener_configuracion_financiera
 from app.services.finanzas.familias import FinanzasError
+from app.services.finanzas.vencimientos import calcular_fecha_vencimiento_pension
 
 
 PERIODO_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -54,7 +56,15 @@ def obtener_plan_financiero_vigente(*, academia_id: int, alumno_id: int, fecha_r
     return planes[0] if planes else None
 
 
-def _crear_obligacion_pension(*, academia_id: int, alumno: Alumno, plan: AlumnoPlanFinanciero, periodo: str, fecha_emision: date):
+def _crear_obligacion_pension(
+    *,
+    academia_id: int,
+    alumno: Alumno,
+    plan: AlumnoPlanFinanciero,
+    periodo: str,
+    fecha_emision: date,
+    fecha_vencimiento: date | None,
+):
     obligacion = ObligacionFinanciera(
         academia_id=academia_id,
         alumno_id=alumno.id,
@@ -64,7 +74,7 @@ def _crear_obligacion_pension(*, academia_id: int, alumno: Alumno, plan: AlumnoP
         concepto=f"Pension {periodo}",
         origen="GENERACION_MENSUAL",
         fecha_emision=fecha_emision,
-        fecha_vencimiento=None,
+        fecha_vencimiento=fecha_vencimiento,
         tarifa_base_snapshot=Decimal(plan.tarifa_base_snapshot),
         porcentaje_descuento_snapshot=plan.descuento_porcentaje_snapshot,
         valor_descuento_snapshot=Decimal(plan.descuento_valor_snapshot),
@@ -80,6 +90,9 @@ def _crear_obligacion_pension(*, academia_id: int, alumno: Alumno, plan: AlumnoP
 def generar_obligaciones_mensuales(*, academia_id: int, periodo: str) -> ResumenGeneracionPensiones:
     periodo, fecha_periodo = parsear_periodo(periodo)
     resumen = ResumenGeneracionPensiones(periodo=periodo, academia_id=academia_id)
+    configuracion = obtener_configuracion_financiera(academia_id=academia_id)
+    dia_vencimiento = configuracion.dia_vencimiento_pension if configuracion else None
+    fecha_vencimiento = calcular_fecha_vencimiento_pension(periodo, dia_vencimiento)
 
     alumnos = (
         Alumno.query
@@ -122,6 +135,7 @@ def generar_obligaciones_mensuales(*, academia_id: int, periodo: str) -> Resumen
                     plan=plan,
                     periodo=periodo,
                     fecha_emision=fecha_periodo,
+                    fecha_vencimiento=fecha_vencimiento,
                 )
                 resumen.creados += 1
         except Exception as exc:

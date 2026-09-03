@@ -6,6 +6,7 @@ from .cartera import (
     obtener_pagos_alumno,
     obtener_resumen_cartera_academia,
 )
+from .configuracion import guardar_dia_vencimiento_pension, obtener_configuracion_financiera
 from .familias import (
     FinanzasError,
     asignar_alumno_a_familia,
@@ -19,6 +20,12 @@ from .obligaciones import (
     generar_obligaciones_mensuales,
     obtener_plan_financiero_vigente,
     parsear_periodo,
+)
+from .vencimientos import (
+    analizar_vencimiento_obligacion,
+    calcular_fecha_vencimiento_pension,
+    clasificar_antiguedad_cartera,
+    validar_dia_vencimiento_pension,
 )
 from .pagos import (
     anular_pago,

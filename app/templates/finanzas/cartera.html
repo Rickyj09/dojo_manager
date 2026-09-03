@@ -13,23 +13,7 @@
   <div class="col-md-3">
     <div class="card shadow-sm">
       <div class="card-body">
-        <small class="text-muted">Total generado</small>
-        <h4 class="mb-0">$ {{ "%.2f"|format(resumen.total_obligaciones) }}</h4>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <small class="text-muted">Total aplicado</small>
-        <h4 class="mb-0">$ {{ "%.2f"|format(resumen.total_aplicado) }}</h4>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <small class="text-muted">Saldo pendiente</small>
+        <small class="text-muted">Saldo total pendiente</small>
         <h4 class="mb-0">$ {{ "%.2f"|format(resumen.saldo_pendiente) }}</h4>
       </div>
     </div>
@@ -37,8 +21,24 @@
   <div class="col-md-3">
     <div class="card shadow-sm">
       <div class="card-body">
-        <small class="text-muted">Saldo de pagos sin aplicar</small>
-        <h4 class="mb-0">$ {{ "%.2f"|format(resumen.saldo_pagos_sin_aplicar) }}</h4>
+        <small class="text-muted">Saldo vencido</small>
+        <h4 class="mb-0">$ {{ "%.2f"|format(resumen.saldo_vencido) }}</h4>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <small class="text-muted">Saldo vigente</small>
+        <h4 class="mb-0">$ {{ "%.2f"|format(resumen.saldo_vigente) }}</h4>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <small class="text-muted">Alumnos con deuda vencida</small>
+        <h4 class="mb-0">{{ resumen.cantidad_alumnos_con_saldo_vencido }}</h4>
       </div>
     </div>
   </div>
@@ -56,6 +56,7 @@
         <select class="form-select" name="saldo">
           <option value="todos" {% if filtro == "todos" %}selected{% endif %}>Todos</option>
           <option value="con_saldo" {% if filtro == "con_saldo" %}selected{% endif %}>Con saldo</option>
+          <option value="vencidos" {% if filtro == "vencidos" %}selected{% endif %}>Vencidos</option>
         </select>
       </div>
       <div class="col-md-2">
@@ -80,6 +81,8 @@
           <th>Total</th>
           <th>Aplicado</th>
           <th>Saldo</th>
+          <th>Vencido</th>
+          <th>Días atraso</th>
           <th>Pagos sin aplicar</th>
           <th>Pendientes</th>
           <th>Parciales</th>
@@ -94,6 +97,8 @@
             <td>$ {{ "%.2f"|format(fila.total_obligaciones) }}</td>
             <td>$ {{ "%.2f"|format(fila.total_aplicado) }}</td>
             <td>$ {{ "%.2f"|format(fila.saldo_pendiente) }}</td>
+            <td>$ {{ "%.2f"|format(fila.saldo_vencido) }}</td>
+            <td>{{ fila.dias_atraso_max if fila.dias_atraso_max else "-" }}</td>
             <td>$ {{ "%.2f"|format(fila.saldo_pagos_sin_aplicar) }}</td>
             <td>{{ fila.cantidad_obligaciones_pendientes }}</td>
             <td>{{ fila.cantidad_obligaciones_parciales }}</td>
@@ -107,7 +112,7 @@
           </tr>
         {% else %}
           <tr>
-            <td colspan="9" class="text-center text-muted">Sin alumnos para mostrar</td>
+            <td colspan="11" class="text-center text-muted">Sin alumnos para mostrar</td>
           </tr>
         {% endfor %}
       </tbody>

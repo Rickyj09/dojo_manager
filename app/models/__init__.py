@@ -26,6 +26,7 @@ from .ascenso import Ascenso
 from .finanzas import (
     AlumnoGrupoFamiliar,
     AlumnoPlanFinanciero,
+    ConfiguracionFinanciera,
     FrecuenciaEntrenamiento,
     GrupoFamiliar,
     ObligacionFinanciera,

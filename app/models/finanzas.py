@@ -159,6 +159,32 @@ class ReglaDescuento(TenantMixin, db.Model):
         return value
 
 
+class ConfiguracionFinanciera(TenantMixin, db.Model):
+    __tablename__ = "configuraciones_financieras"
+
+    id = db.Column(db.Integer, primary_key=True)
+    dia_vencimiento_pension = db.Column(db.Integer, nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=True, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("academia_id", name="uq_configuraciones_financieras_academia"),
+        db.CheckConstraint(
+            "dia_vencimiento_pension IS NULL OR (dia_vencimiento_pension >= 1 AND dia_vencimiento_pension <= 31)",
+            name="ck_configuraciones_financieras_dia_vencimiento_pension",
+        ),
+    )
+
+    @validates("dia_vencimiento_pension")
+    def _validar_dia_vencimiento_pension(self, key, value):
+        if value is None or value == "":
+            return None
+        value = int(value)
+        if value < 1 or value > 31:
+            raise ValueError("El dia de vencimiento de pension debe estar entre 1 y 31")
+        return value
+
+
 class GrupoFamiliar(TenantMixin, db.Model):
     __tablename__ = "grupos_familiares"
 

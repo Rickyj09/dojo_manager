@@ -13,6 +13,15 @@ from app.services.finanzas.pagos import (
     obtener_estado_pago_obligacion,
 )
 from app.services.finanzas.tarifas import redondear_dinero
+from app.services.finanzas.vencimientos import (
+    BUCKET_1_30,
+    BUCKET_31_60,
+    BUCKET_61_90,
+    BUCKET_MAS_90,
+    BUCKET_SIN_VENCIMIENTO,
+    CONDICION_VENCIDA,
+    analizar_vencimiento_obligacion,
+)
 
 
 @dataclass(frozen=True)
@@ -20,11 +29,20 @@ class ResumenCartera:
     total_obligaciones: Decimal
     total_aplicado: Decimal
     saldo_pendiente: Decimal
+    saldo_vigente: Decimal
+    saldo_vencido: Decimal
     saldo_pagos_sin_aplicar: Decimal
     cantidad_alumnos_con_saldo: int
+    cantidad_alumnos_con_saldo_vencido: int
     cantidad_obligaciones_pendientes: int
     cantidad_obligaciones_parciales: int
     cantidad_obligaciones_pagadas: int
+    cantidad_obligaciones_vencidas: int
+    saldo_1_30: Decimal
+    saldo_31_60: Decimal
+    saldo_61_90: Decimal
+    saldo_mas_90: Decimal
+    saldo_sin_vencimiento: Decimal
 
 
 @dataclass(frozen=True)
@@ -34,9 +52,13 @@ class FilaCarteraAlumno:
     total_obligaciones: Decimal
     total_aplicado: Decimal
     saldo_pendiente: Decimal
+    saldo_vigente: Decimal
+    saldo_vencido: Decimal
     saldo_pagos_sin_aplicar: Decimal
     cantidad_obligaciones_pendientes: int
     cantidad_obligaciones_parciales: int
+    cantidad_obligaciones_vencidas: int
+    dias_atraso_max: int
     ultima_fecha_pago: date | None
 
 
@@ -47,6 +69,9 @@ class ObligacionEstadoCuenta:
     total_aplicado: Decimal
     saldo: Decimal
     estado_derivado: str
+    condicion_temporal: str
+    dias_atraso: int
+    bucket_antiguedad: str
 
 
 @dataclass(frozen=True)
@@ -118,8 +143,15 @@ def _totales_aplicados_por_pago(academia_id: int, alumno_id: int | None = None) 
     return {row[0]: _money(row[1]) for row in query.all()}
 
 
-def obtener_obligaciones_alumno(*, academia_id: int, alumno_id: int, incluir_anuladas: bool = True):
+def obtener_obligaciones_alumno(
+    *,
+    academia_id: int,
+    alumno_id: int,
+    incluir_anuladas: bool = True,
+    fecha_referencia: date | None = None,
+):
     _alumno_de_academia(academia_id, alumno_id)
+    fecha_referencia = fecha_referencia or date.today()
     query = ObligacionFinanciera.query.filter_by(academia_id=academia_id, alumno_id=alumno_id)
     if not incluir_anuladas:
         query = query.filter(ObligacionFinanciera.estado != "ANULADA")
@@ -139,6 +171,12 @@ def obtener_obligaciones_alumno(*, academia_id: int, alumno_id: int, incluir_anu
                 academia_id=academia_id,
                 obligacion_financiera_id=obligacion.id,
             )
+        vencimiento = analizar_vencimiento_obligacion(
+            fecha_vencimiento=obligacion.fecha_vencimiento,
+            saldo=saldo,
+            estado_financiero=estado,
+            fecha_referencia=fecha_referencia,
+        )
         resultado.append(
             ObligacionEstadoCuenta(
                 obligacion=obligacion,
@@ -146,6 +184,9 @@ def obtener_obligaciones_alumno(*, academia_id: int, alumno_id: int, incluir_anu
                 total_aplicado=aplicado,
                 saldo=saldo,
                 estado_derivado=estado,
+                condicion_temporal=vencimiento.condicion,
+                dias_atraso=vencimiento.dias_atraso,
+                bucket_antiguedad=vencimiento.bucket_antiguedad,
             )
         )
     return resultado
@@ -167,9 +208,19 @@ def obtener_pagos_alumno(*, academia_id: int, alumno_id: int, incluir_anulados: 
     return resultado
 
 
-def obtener_estado_cuenta_alumno(*, academia_id: int, alumno_id: int) -> EstadoCuentaAlumno:
+def obtener_estado_cuenta_alumno(
+    *,
+    academia_id: int,
+    alumno_id: int,
+    fecha_referencia: date | None = None,
+) -> EstadoCuentaAlumno:
     alumno = _alumno_de_academia(academia_id, alumno_id)
-    obligaciones = obtener_obligaciones_alumno(academia_id=academia_id, alumno_id=alumno_id, incluir_anuladas=True)
+    obligaciones = obtener_obligaciones_alumno(
+        academia_id=academia_id,
+        alumno_id=alumno_id,
+        incluir_anuladas=True,
+        fecha_referencia=fecha_referencia,
+    )
     pagos = obtener_pagos_alumno(academia_id=academia_id, alumno_id=alumno_id, incluir_anulados=True)
 
     obligaciones_operativas = [item for item in obligaciones if item.estado_derivado != "ANULADA"]
@@ -195,9 +246,12 @@ def obtener_cartera_alumnos(
     academia_id: int,
     q: str | None = None,
     con_saldo: bool = False,
+    vencidos: bool = False,
     periodo: str | None = None,
     alumno_ids: set[int] | None = None,
+    fecha_referencia: date | None = None,
 ):
+    fecha_referencia = fecha_referencia or date.today()
     alumnos_query = Alumno.query.filter_by(academia_id=academia_id, activo=True)
     if alumno_ids is not None:
         alumnos_query = alumnos_query.filter(Alumno.id.in_(alumno_ids))
@@ -226,14 +280,43 @@ def obtener_cartera_alumnos(
     }
     pagos = PagoFinanciero.query.filter(PagoFinanciero.academia_id == academia_id, PagoFinanciero.estado == "REGISTRADO").all()
 
-    por_alumno = {alumno.id: {"total": Decimal("0.00"), "aplicado": Decimal("0.00"), "pendientes": 0, "parciales": 0} for alumno in alumnos}
+    por_alumno = {
+        alumno.id: {
+            "total": Decimal("0.00"),
+            "aplicado": Decimal("0.00"),
+            "vigente": Decimal("0.00"),
+            "vencido": Decimal("0.00"),
+            "pendientes": 0,
+            "parciales": 0,
+            "vencidas": 0,
+            "dias_atraso_max": 0,
+        }
+        for alumno in alumnos
+    }
     for obligacion in obligaciones:
         if obligacion.alumno_id not in por_alumno:
             continue
         total = _money(obligacion.valor_final_snapshot)
         aplicado = aplicados.get(obligacion.id, Decimal("0.00"))
+        saldo = _money(total - aplicado)
+        estado = "PENDIENTE" if aplicado == 0 else "PARCIAL" if aplicado < total else "PAGADA"
+        vencimiento = analizar_vencimiento_obligacion(
+            fecha_vencimiento=obligacion.fecha_vencimiento,
+            saldo=saldo,
+            estado_financiero=estado,
+            fecha_referencia=fecha_referencia,
+        )
         por_alumno[obligacion.alumno_id]["total"] += total
         por_alumno[obligacion.alumno_id]["aplicado"] += aplicado
+        if vencimiento.condicion == CONDICION_VENCIDA:
+            por_alumno[obligacion.alumno_id]["vencido"] += saldo
+            por_alumno[obligacion.alumno_id]["vencidas"] += 1
+            por_alumno[obligacion.alumno_id]["dias_atraso_max"] = max(
+                por_alumno[obligacion.alumno_id]["dias_atraso_max"],
+                vencimiento.dias_atraso,
+            )
+        else:
+            por_alumno[obligacion.alumno_id]["vigente"] += saldo
         if aplicado == 0:
             por_alumno[obligacion.alumno_id]["pendientes"] += 1
         elif aplicado < total:
@@ -250,6 +333,8 @@ def obtener_cartera_alumnos(
         saldo = _money(datos["total"] - datos["aplicado"])
         if con_saldo and saldo <= 0:
             continue
+        if vencidos and datos["vencido"] <= 0:
+            continue
         filas.append(
             FilaCarteraAlumno(
                 alumno_id=alumno.id,
@@ -257,9 +342,13 @@ def obtener_cartera_alumnos(
                 total_obligaciones=_money(datos["total"]),
                 total_aplicado=_money(datos["aplicado"]),
                 saldo_pendiente=saldo,
+                saldo_vigente=_money(datos["vigente"]),
+                saldo_vencido=_money(datos["vencido"]),
                 saldo_pagos_sin_aplicar=_money(saldo_pagos_por_alumno.get(alumno.id, Decimal("0.00"))),
                 cantidad_obligaciones_pendientes=datos["pendientes"],
                 cantidad_obligaciones_parciales=datos["parciales"],
+                cantidad_obligaciones_vencidas=datos["vencidas"],
+                dias_atraso_max=datos["dias_atraso_max"],
                 ultima_fecha_pago=ultimos_pagos.get(alumno.id),
             )
         )
@@ -271,8 +360,15 @@ def obtener_resumen_cartera_academia(
     academia_id: int,
     periodo: str | None = None,
     alumno_ids: set[int] | None = None,
+    fecha_referencia: date | None = None,
 ) -> ResumenCartera:
-    filas = obtener_cartera_alumnos(academia_id=academia_id, periodo=periodo, alumno_ids=alumno_ids)
+    fecha_referencia = fecha_referencia or date.today()
+    filas = obtener_cartera_alumnos(
+        academia_id=academia_id,
+        periodo=periodo,
+        alumno_ids=alumno_ids,
+        fecha_referencia=fecha_referencia,
+    )
     obligaciones = ObligacionFinanciera.query.filter(
         ObligacionFinanciera.academia_id == academia_id,
         ObligacionFinanciera.estado != "ANULADA",
@@ -284,24 +380,53 @@ def obtener_resumen_cartera_academia(
     obligaciones = obligaciones.all()
     aplicados = _totales_aplicados_por_obligacion(academia_id)
 
-    pendientes = parciales = pagadas = 0
+    pendientes = parciales = pagadas = vencidas = 0
+    buckets = {
+        BUCKET_1_30: Decimal("0.00"),
+        BUCKET_31_60: Decimal("0.00"),
+        BUCKET_61_90: Decimal("0.00"),
+        BUCKET_MAS_90: Decimal("0.00"),
+        BUCKET_SIN_VENCIMIENTO: Decimal("0.00"),
+    }
     for obligacion in obligaciones:
         total = _money(obligacion.valor_final_snapshot)
         aplicado = aplicados.get(obligacion.id, Decimal("0.00"))
+        saldo = _money(total - aplicado)
         if aplicado == 0:
             pendientes += 1
         elif aplicado < total:
             parciales += 1
         else:
             pagadas += 1
+        estado = "PENDIENTE" if aplicado == 0 else "PARCIAL" if aplicado < total else "PAGADA"
+        vencimiento = analizar_vencimiento_obligacion(
+            fecha_vencimiento=obligacion.fecha_vencimiento,
+            saldo=saldo,
+            estado_financiero=estado,
+            fecha_referencia=fecha_referencia,
+        )
+        if vencimiento.condicion == CONDICION_VENCIDA:
+            vencidas += 1
+            buckets[vencimiento.bucket_antiguedad] += saldo
+        elif vencimiento.bucket_antiguedad == BUCKET_SIN_VENCIMIENTO and saldo > 0:
+            buckets[BUCKET_SIN_VENCIMIENTO] += saldo
 
     return ResumenCartera(
         total_obligaciones=_money(sum((fila.total_obligaciones for fila in filas), Decimal("0.00"))),
         total_aplicado=_money(sum((fila.total_aplicado for fila in filas), Decimal("0.00"))),
         saldo_pendiente=_money(sum((fila.saldo_pendiente for fila in filas), Decimal("0.00"))),
+        saldo_vigente=_money(sum((fila.saldo_vigente for fila in filas), Decimal("0.00"))),
+        saldo_vencido=_money(sum((fila.saldo_vencido for fila in filas), Decimal("0.00"))),
         saldo_pagos_sin_aplicar=_money(sum((fila.saldo_pagos_sin_aplicar for fila in filas), Decimal("0.00"))),
         cantidad_alumnos_con_saldo=sum(1 for fila in filas if fila.saldo_pendiente > 0),
+        cantidad_alumnos_con_saldo_vencido=sum(1 for fila in filas if fila.saldo_vencido > 0),
         cantidad_obligaciones_pendientes=pendientes,
         cantidad_obligaciones_parciales=parciales,
         cantidad_obligaciones_pagadas=pagadas,
+        cantidad_obligaciones_vencidas=vencidas,
+        saldo_1_30=_money(buckets[BUCKET_1_30]),
+        saldo_31_60=_money(buckets[BUCKET_31_60]),
+        saldo_61_90=_money(buckets[BUCKET_61_90]),
+        saldo_mas_90=_money(buckets[BUCKET_MAS_90]),
+        saldo_sin_vencimiento=_money(buckets[BUCKET_SIN_VENCIMIENTO]),
     )

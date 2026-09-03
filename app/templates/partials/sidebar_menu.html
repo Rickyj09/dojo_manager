@@ -129,6 +129,14 @@
               <i class="bi bi-wallet2 me-2"></i> Cartera
             </a>
           </li>
+          {% if is_admin %}
+          <li class="nav-item">
+            <a class="nav-link text-white-50 {% if ep == 'finanzas.configuracion' %}active{% endif %}"
+               href="{{ url_for('finanzas.configuracion') }}">
+              <i class="bi bi-gear me-2"></i> Configuracion
+            </a>
+          </li>
+          {% endif %}
         </ul>
       </div>
     </li>
