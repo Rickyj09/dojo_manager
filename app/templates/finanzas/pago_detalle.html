@@ -84,6 +84,65 @@
 </div>
 
 <div class="card shadow-sm mb-4">
+  <div class="card-header fw-bold">Comprobantes</div>
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-striped align-middle">
+        <thead>
+          <tr>
+            <th>Archivo</th>
+            <th>Tipo</th>
+            <th>Tamaño</th>
+            <th>Cargado por</th>
+            <th>Fecha</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for comprobante in comprobantes %}
+            <tr>
+              <td>{{ comprobante.nombre_original }}</td>
+              <td>{{ comprobante.extension|upper }}</td>
+              <td>{{ "%.1f"|format(comprobante.tamano_bytes / 1024) }} KB</td>
+              <td>{{ comprobante.uploaded_by.username }}</td>
+              <td>{{ comprobante.created_at.strftime("%d/%m/%Y %H:%M") }}</td>
+              <td class="text-end">
+                <a class="btn btn-outline-primary btn-sm" href="{{ url_for('finanzas.ver_comprobante', comprobante_id=comprobante.id) }}" target="_blank" rel="noopener">
+                  <i class="bi bi-eye"></i> Ver
+                </a>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="6" class="text-center text-muted">Sin comprobantes cargados</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if puede_escribir and pago.estado == "REGISTRADO" %}
+      <form method="post" action="{{ url_for('finanzas.cargar_comprobante_pago', pago_id=pago.id) }}" enctype="multipart/form-data" class="row g-3 mt-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-md-6">
+          <label class="form-label" for="comprobante">Archivo</label>
+          <input class="form-control" id="comprobante" name="comprobante" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="observacion_comprobante">Observacion</label>
+          <input class="form-control" id="observacion_comprobante" name="observacion_comprobante">
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+          <button class="btn btn-primary w-100" type="submit">
+            <i class="bi bi-upload"></i> Cargar
+          </button>
+        </div>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
   <div class="card-header fw-bold">Aplicaciones existentes</div>
   <div class="card-body table-responsive">
     <table class="table table-striped align-middle">

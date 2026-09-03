@@ -31,6 +31,7 @@ from .finanzas import (
     GrupoFamiliar,
     ObligacionFinanciera,
     PagoAplicacion,
+    PagoComprobante,
     PagoFinanciero,
     PlanFinanciero,
     ReglaDescuento,

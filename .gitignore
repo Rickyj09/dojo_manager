@@ -10,6 +10,7 @@ __pycache__/
 dojo_manager.db
 *.db
 app/static/uploads/
+instance/
 
 # Configuracion local / secretos
 .env

@@ -2,10 +2,16 @@ import os
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
+INSTANCE_DIR = os.path.join(PROJECT_ROOT, "instance")
 
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads", "alumnos")
 ACTAS_UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads", "actas")
 MAX_CONTENT_LENGTH = 10 * 1024 * 1024
+PAGO_COMPROBANTE_STORAGE_ROOT = os.environ.get(
+    "PAGO_COMPROBANTE_STORAGE_ROOT",
+    os.path.join(INSTANCE_DIR, "pagos_comprobantes"),
+)
+PAGO_COMPROBANTE_MAX_BYTES = int(os.environ.get("PAGO_COMPROBANTE_MAX_BYTES", 5 * 1024 * 1024))
 
 
 class Config:
@@ -22,6 +28,9 @@ class Config:
     )
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    PAGO_COMPROBANTE_STORAGE_ROOT = PAGO_COMPROBANTE_STORAGE_ROOT
+    PAGO_COMPROBANTE_MAX_BYTES = PAGO_COMPROBANTE_MAX_BYTES
 
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SECURE = os.environ.get(

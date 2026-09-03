@@ -9,6 +9,14 @@ from .cartera import (
     obtener_resumen_cartera_academia,
 )
 from .configuracion import guardar_dia_vencimiento_pension, obtener_configuracion_financiera
+from .comprobantes import (
+    FORMATOS_COMPROBANTE,
+    eliminar_archivo_comprobante,
+    guardar_comprobante_pago,
+    listar_comprobantes_pago,
+    obtener_comprobante,
+    resolver_ruta_comprobante,
+)
 from .familias import (
     FinanzasError,
     asignar_alumno_a_familia,

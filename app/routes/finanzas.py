@@ -1,7 +1,8 @@
 from datetime import date
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
+from werkzeug.exceptions import HTTPException
 
 from app.models.alumno import Alumno
 from app.extensions import db
@@ -9,14 +10,19 @@ from app.services.finanzas import (
     MEDIOS_PAGO_FINANCIERO,
     anular_pago,
     aplicar_pago_a_obligaciones,
+    eliminar_archivo_comprobante,
     guardar_dia_vencimiento_pension,
+    guardar_comprobante_pago,
     obtener_detalle_pago,
+    listar_comprobantes_pago,
     obtener_cartera_alumnos,
+    obtener_comprobante,
     obtener_configuracion_financiera,
     obtener_estado_cuenta_alumno,
     obtener_obligaciones_aplicables_pago,
     obtener_resumen_cartera_academia,
     registrar_pago,
+    resolver_ruta_comprobante,
 )
 from app.services.finanzas.familias import FinanzasError
 
@@ -214,11 +220,13 @@ def detalle_pago(pago_id):
         abort(404)
     _validar_alumno_visible(academia_id, detalle.pago.alumno_id)
     obligaciones_aplicables = obtener_obligaciones_aplicables_pago(academia_id=academia_id, pago_id=pago_id)
+    comprobantes = listar_comprobantes_pago(academia_id=academia_id, pago_id=pago_id)
 
     return render_template(
         "finanzas/pago_detalle.html",
         detalle=detalle,
         obligaciones_aplicables=obligaciones_aplicables,
+        comprobantes=comprobantes,
         puede_escribir=_puede_escribir_finanzas(),
     )
 
@@ -246,6 +254,67 @@ def aplicar_pago_financiero(pago_id):
     else:
         flash(f"Se aplicaron {len(creadas)} valores del pago.", "success")
     return redirect(url_for("finanzas.detalle_pago", pago_id=pago_id))
+
+
+@finanzas_bp.route("/pagos/<int:pago_id>/comprobantes", methods=["POST"])
+@login_required
+def cargar_comprobante_pago(pago_id):
+    if not _puede_escribir_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+    comprobante = None
+    try:
+        detalle = obtener_detalle_pago(academia_id=academia_id, pago_id=pago_id)
+        _validar_alumno_visible(academia_id, detalle.pago.alumno_id)
+        comprobante = guardar_comprobante_pago(
+            academia_id=academia_id,
+            pago_id=pago_id,
+            archivo=request.files.get("comprobante"),
+            uploaded_by_id=current_user.id,
+            observacion=request.form.get("observacion_comprobante"),
+        )
+        db.session.commit()
+    except FinanzasError as exc:
+        db.session.rollback()
+        if comprobante is not None:
+            eliminar_archivo_comprobante(comprobante)
+        flash(str(exc), "danger")
+    except HTTPException:
+        db.session.rollback()
+        raise
+    except Exception:
+        db.session.rollback()
+        if comprobante is not None:
+            eliminar_archivo_comprobante(comprobante)
+        flash("No se pudo guardar el comprobante.", "danger")
+    else:
+        flash("Comprobante cargado correctamente.", "success")
+    return redirect(url_for("finanzas.detalle_pago", pago_id=pago_id))
+
+
+@finanzas_bp.route("/comprobantes/<int:comprobante_id>")
+@login_required
+def ver_comprobante(comprobante_id):
+    if not _puede_ver_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+    try:
+        comprobante = obtener_comprobante(academia_id=academia_id, comprobante_id=comprobante_id)
+        detalle = obtener_detalle_pago(academia_id=academia_id, pago_id=comprobante.pago_financiero_id)
+        _validar_alumno_visible(academia_id, detalle.pago.alumno_id)
+        ruta = resolver_ruta_comprobante(comprobante)
+    except FinanzasError:
+        abort(404)
+    if not ruta.exists():
+        abort(404)
+    return send_file(
+        ruta,
+        mimetype=comprobante.mime_type,
+        as_attachment=False,
+        download_name=comprobante.nombre_original,
+    )
 
 
 @finanzas_bp.route("/pagos/<int:pago_id>/anular", methods=["POST"])

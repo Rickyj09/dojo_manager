@@ -364,6 +364,7 @@ class PagoFinanciero(TenantMixin, db.Model):
 
     alumno = db.relationship("Alumno")
     aplicaciones = db.relationship("PagoAplicacion", back_populates="pago")
+    comprobantes = db.relationship("PagoComprobante", back_populates="pago")
 
     __table_args__ = (
         db.Index("ix_pagos_financieros_academia_fecha", "academia_id", "fecha_pago"),
@@ -410,6 +411,32 @@ class PagoAplicacion(TenantMixin, db.Model):
         if value <= 0:
             raise ValueError("El valor aplicado debe ser mayor a cero")
         return value
+
+
+class PagoComprobante(TenantMixin, db.Model):
+    __tablename__ = "pagos_comprobantes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    pago_financiero_id = db.Column(db.Integer, db.ForeignKey("pagos_financieros.id"), nullable=False)
+    nombre_original = db.Column(db.String(255), nullable=False)
+    nombre_interno = db.Column(db.String(80), nullable=False)
+    ruta_relativa = db.Column(db.String(255), nullable=False)
+    mime_type = db.Column(db.String(120), nullable=False)
+    extension = db.Column(db.String(10), nullable=False)
+    tamano_bytes = db.Column(db.Integer, nullable=False)
+    sha256 = db.Column(db.String(64), nullable=False)
+    uploaded_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    observacion = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    pago = db.relationship("PagoFinanciero", back_populates="comprobantes")
+    uploaded_by = db.relationship("User")
+
+    __table_args__ = (
+        db.UniqueConstraint("pago_financiero_id", "sha256", name="uq_pagos_comprobantes_pago_sha256"),
+        db.Index("ix_pagos_comprobantes_pago", "academia_id", "pago_financiero_id"),
+        db.CheckConstraint("tamano_bytes > 0", name="ck_pagos_comprobantes_tamano_positivo"),
+    )
 
 
 class TarifaPlan(TenantMixin, db.Model):
@@ -467,3 +494,18 @@ def _validar_tarifa_plan_tenant(mapper, connection, target):
 
 event.listen(TarifaPlan, "before_insert", _validar_tarifa_plan_tenant)
 event.listen(TarifaPlan, "before_update", _validar_tarifa_plan_tenant)
+
+
+def _validar_pago_comprobante_tenant(mapper, connection, target):
+    row = connection.execute(
+        text("SELECT academia_id FROM pagos_financieros WHERE id = :pago_id"),
+        {"pago_id": target.pago_financiero_id},
+    ).fetchone()
+    if row is None:
+        raise ValueError("Pago financiero inexistente")
+    if row[0] != target.academia_id:
+        raise ValueError("PagoComprobante no puede relacionar datos de otra academia")
+
+
+event.listen(PagoComprobante, "before_insert", _validar_pago_comprobante_tenant)
+event.listen(PagoComprobante, "before_update", _validar_pago_comprobante_tenant)
