@@ -104,6 +104,12 @@
             <td>{{ fila.cantidad_obligaciones_parciales }}</td>
             <td>{{ fila.ultima_fecha_pago.strftime("%d/%m/%Y") if fila.ultima_fecha_pago else "Sin pagos" }}</td>
             <td class="text-end">
+              {% if puede_escribir %}
+              <a class="btn btn-outline-success btn-sm"
+                 href="{{ url_for('finanzas.nuevo_pago_alumno', alumno_id=fila.alumno_id) }}">
+                <i class="bi bi-cash"></i> Pago
+              </a>
+              {% endif %}
               <a class="btn btn-outline-primary btn-sm"
                  href="{{ url_for('finanzas.estado_cuenta_alumno', alumno_id=fila.alumno_id) }}">
                 <i class="bi bi-file-text"></i> Estado

@@ -1,5 +1,6 @@
+from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import func
 
@@ -10,8 +11,44 @@ from app.services.finanzas.familias import FinanzasError
 from app.services.finanzas.tarifas import redondear_dinero
 
 
+MEDIOS_PAGO_FINANCIERO = ("EFECTIVO", "TRANSFERENCIA", "DEPOSITO", "TARJETA", "OTRO")
+
+
+@dataclass(frozen=True)
+class AplicacionPagoInput:
+    obligacion_financiera_id: int
+    valor_aplicado: Decimal
+
+
 def _decimal(value) -> Decimal:
-    return redondear_dinero(Decimal(value))
+    try:
+        return redondear_dinero(Decimal(str(value)))
+    except (InvalidOperation, ValueError):
+        raise FinanzasError("El valor debe ser un numero valido")
+
+
+def _validar_precision_monetaria(value, nombre: str) -> Decimal:
+    valor = _decimal(value)
+    try:
+        if Decimal(str(value)).as_tuple().exponent < -2:
+            raise FinanzasError(f"{nombre} no puede tener mas de 2 decimales")
+    except InvalidOperation:
+        raise FinanzasError(f"{nombre} debe ser un numero valido")
+    return valor
+
+
+def _normalizar_medio_pago(medio_pago: str) -> str:
+    medio = (medio_pago or "").strip().upper()
+    if medio not in MEDIOS_PAGO_FINANCIERO:
+        raise FinanzasError("Medio de pago invalido")
+    return medio
+
+
+def _normalizar_moneda(moneda: str) -> str:
+    moneda = (moneda or "USD").strip().upper()
+    if len(moneda) != 3:
+        raise FinanzasError("La moneda debe usar codigo ISO de 3 letras")
+    return moneda
 
 
 def _sumar_aplicaciones(query) -> Decimal:
@@ -30,7 +67,7 @@ def registrar_pago(
     referencia: str | None = None,
     observacion: str | None = None,
 ) -> PagoFinanciero:
-    valor = _decimal(valor)
+    valor = _validar_precision_monetaria(valor, "El valor del pago")
     if valor <= 0:
         raise FinanzasError("El valor del pago debe ser mayor a cero")
 
@@ -43,8 +80,8 @@ def registrar_pago(
         alumno_id=alumno.id,
         fecha_pago=fecha_pago,
         valor=valor,
-        moneda=moneda,
-        medio_pago=(medio_pago or "").strip().upper(),
+        moneda=_normalizar_moneda(moneda),
+        medio_pago=_normalizar_medio_pago(medio_pago),
         referencia=referencia,
         observacion=observacion,
         estado="REGISTRADO",
@@ -115,7 +152,7 @@ def obtener_estado_pago_obligacion(*, academia_id: int, obligacion_financiera_id
 
 
 def aplicar_pago(*, academia_id: int, pago_id: int, obligacion_financiera_id: int, valor_aplicado) -> PagoAplicacion:
-    valor_aplicado = _decimal(valor_aplicado)
+    valor_aplicado = _validar_precision_monetaria(valor_aplicado, "El valor aplicado")
     if valor_aplicado <= 0:
         raise FinanzasError("El valor aplicado debe ser mayor a cero")
 
@@ -153,6 +190,79 @@ def aplicar_pago(*, academia_id: int, pago_id: int, obligacion_financiera_id: in
     db.session.add(aplicacion)
     db.session.flush()
     return aplicacion
+
+
+def aplicar_pago_a_obligaciones(
+    *,
+    academia_id: int,
+    pago_id: int,
+    aplicaciones: list[dict] | list[AplicacionPagoInput],
+) -> list[PagoAplicacion]:
+    pago = PagoFinanciero.query.filter_by(id=pago_id, academia_id=academia_id).first()
+    if pago is None:
+        raise FinanzasError("Pago no pertenece a la academia indicada")
+    if pago.estado == "ANULADO":
+        raise FinanzasError("No se puede aplicar un pago anulado")
+
+    normalizadas = []
+    for item in aplicaciones:
+        obligacion_id = item.obligacion_financiera_id if isinstance(item, AplicacionPagoInput) else item.get("obligacion_financiera_id")
+        valor = item.valor_aplicado if isinstance(item, AplicacionPagoInput) else item.get("valor_aplicado")
+        valor = _validar_precision_monetaria(valor, "El valor aplicado")
+        if valor <= 0:
+            raise FinanzasError("El valor aplicado debe ser mayor a cero")
+        try:
+            obligacion_id = int(obligacion_id)
+        except (TypeError, ValueError):
+            raise FinanzasError("Obligacion invalida")
+        normalizadas.append(AplicacionPagoInput(obligacion_financiera_id=obligacion_id, valor_aplicado=valor))
+
+    if not normalizadas:
+        raise FinanzasError("Debe indicar al menos una aplicacion")
+
+    total_a_aplicar = redondear_dinero(sum((item.valor_aplicado for item in normalizadas), Decimal("0.00")))
+    saldo_pago = calcular_saldo_pago(academia_id=academia_id, pago_id=pago.id)
+    if total_a_aplicar > saldo_pago:
+        raise FinanzasError("El valor aplicado excede el saldo disponible del pago")
+
+    saldos_por_obligacion = {}
+    for item in normalizadas:
+        obligacion = ObligacionFinanciera.query.filter_by(
+            id=item.obligacion_financiera_id,
+            academia_id=academia_id,
+        ).first()
+        if obligacion is None:
+            raise FinanzasError("Obligacion no pertenece a la academia indicada")
+        if obligacion.estado == "ANULADA":
+            raise FinanzasError("No se puede aplicar a una obligacion anulada")
+        if obligacion.alumno_id != pago.alumno_id:
+            raise FinanzasError("El pago no pertenece al alumno de la obligacion")
+        saldos_por_obligacion[obligacion.id] = calcular_saldo_obligacion(
+            academia_id=academia_id,
+            obligacion_financiera_id=obligacion.id,
+        )
+
+    totales_por_obligacion = {}
+    for item in normalizadas:
+        totales_por_obligacion[item.obligacion_financiera_id] = (
+            totales_por_obligacion.get(item.obligacion_financiera_id, Decimal("0.00")) + item.valor_aplicado
+        )
+    for obligacion_id, total in totales_por_obligacion.items():
+        if redondear_dinero(total) > saldos_por_obligacion[obligacion_id]:
+            raise FinanzasError("El valor aplicado excede el saldo de la obligacion")
+
+    creadas = []
+    for item in normalizadas:
+        aplicacion = PagoAplicacion(
+            academia_id=academia_id,
+            pago_id=pago.id,
+            obligacion_financiera_id=item.obligacion_financiera_id,
+            valor_aplicado=item.valor_aplicado,
+        )
+        db.session.add(aplicacion)
+        creadas.append(aplicacion)
+    db.session.flush()
+    return creadas
 
 
 def anular_pago(*, academia_id: int, pago_id: int) -> PagoFinanciero:

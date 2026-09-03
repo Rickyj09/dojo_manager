@@ -9,9 +9,16 @@
     <h3 class="mb-1">Estado de cuenta</h3>
     <p class="text-muted mb-0">{{ alumno.nombres }} {{ alumno.apellidos }}</p>
   </div>
-  <a href="{{ url_for('finanzas.cartera') }}" class="btn btn-outline-secondary">
-    <i class="bi bi-arrow-left"></i> Cartera
-  </a>
+  <div class="d-flex gap-2">
+    {% if puede_escribir %}
+    <a href="{{ url_for('finanzas.nuevo_pago_alumno', alumno_id=alumno.id) }}" class="btn btn-success">
+      <i class="bi bi-cash"></i> Registrar pago
+    </a>
+    {% endif %}
+    <a href="{{ url_for('finanzas.cartera') }}" class="btn btn-outline-secondary">
+      <i class="bi bi-arrow-left"></i> Cartera
+    </a>
+  </div>
 </div>
 
 <div class="row g-3 mb-4">
@@ -116,6 +123,7 @@
           <th>Aplicado</th>
           <th>Saldo sin aplicar</th>
           <th>Estado</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -128,10 +136,15 @@
             <td>$ {{ "%.2f"|format(item.total_aplicado) }}</td>
             <td>$ {{ "%.2f"|format(item.saldo_sin_aplicar) }}</td>
             <td>{{ item.pago.estado }}</td>
+            <td class="text-end">
+              <a class="btn btn-outline-primary btn-sm" href="{{ url_for('finanzas.detalle_pago', pago_id=item.pago.id) }}">
+                <i class="bi bi-eye"></i> Ver pago
+              </a>
+            </td>
           </tr>
         {% else %}
           <tr>
-            <td colspan="7" class="text-center text-muted">Sin pagos financieros</td>
+            <td colspan="8" class="text-center text-muted">Sin pagos financieros</td>
           </tr>
         {% endfor %}
       </tbody>

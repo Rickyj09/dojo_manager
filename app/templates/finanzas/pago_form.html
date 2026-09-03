@@ -1,0 +1,55 @@
+{% extends "base_admin.html" %}
+{% block title %}Registrar pago financiero{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h3 class="mb-1">Registrar pago</h3>
+    <p class="text-muted mb-0">{{ alumno.nombres }} {{ alumno.apellidos }}</p>
+  </div>
+  <a href="{{ url_for('finanzas.estado_cuenta_alumno', alumno_id=alumno.id) }}" class="btn btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Estado
+  </a>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" class="row g-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-3">
+        <label class="form-label" for="fecha_pago">Fecha de pago</label>
+        <input class="form-control" id="fecha_pago" name="fecha_pago" type="date" value="{{ form.fecha_pago }}" required>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" for="valor">Valor</label>
+        <input class="form-control" id="valor" name="valor" type="text" inputmode="decimal" value="{{ form.valor }}" required>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="moneda">Moneda</label>
+        <input class="form-control" id="moneda" name="moneda" maxlength="3" value="{{ form.moneda }}" required>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="medio_pago">Medio</label>
+        <select class="form-select" id="medio_pago" name="medio_pago" required>
+          {% for medio in medios_pago %}
+            <option value="{{ medio }}" {% if form.medio_pago == medio %}selected{% endif %}>{{ medio }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="referencia">Referencia</label>
+        <input class="form-control" id="referencia" name="referencia" value="{{ form.referencia }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="observacion">Observacion</label>
+        <input class="form-control" id="observacion" name="observacion" value="{{ form.observacion }}">
+      </div>
+      <div class="col-12">
+        <button class="btn btn-primary" type="submit">
+          <i class="bi bi-save"></i> Registrar
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

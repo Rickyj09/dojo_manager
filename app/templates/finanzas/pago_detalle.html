@@ -1,0 +1,162 @@
+{% extends "base_admin.html" %}
+{% block title %}Pago financiero{% endblock %}
+
+{% block content %}
+{% set pago = detalle.pago %}
+{% set alumno = detalle.alumno %}
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h3 class="mb-1">Pago financiero</h3>
+    <p class="text-muted mb-0">{{ alumno.nombres }} {{ alumno.apellidos }}</p>
+  </div>
+  <a href="{{ url_for('finanzas.estado_cuenta_alumno', alumno_id=alumno.id) }}" class="btn btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Estado
+  </a>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <small class="text-muted">Monto</small>
+        <h4>$ {{ "%.2f"|format(pago.valor) }}</h4>
+        <div class="small text-muted">{{ pago.moneda }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <small class="text-muted">Aplicado</small>
+        <h4>$ {{ "%.2f"|format(detalle.total_aplicado) }}</h4>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <small class="text-muted">Disponible</small>
+        <h4>$ {{ "%.2f"|format(detalle.saldo_sin_aplicar) }}</h4>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <small class="text-muted">Estado</small>
+        <h4>{{ pago.estado }}</h4>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-bold">Datos del pago</div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-3">
+        <small class="text-muted">Fecha</small>
+        <div>{{ pago.fecha_pago.strftime("%d/%m/%Y") }}</div>
+      </div>
+      <div class="col-md-3">
+        <small class="text-muted">Medio</small>
+        <div>{{ pago.medio_pago }}</div>
+      </div>
+      <div class="col-md-3">
+        <small class="text-muted">Referencia</small>
+        <div>{{ pago.referencia or "Sin referencia" }}</div>
+      </div>
+      <div class="col-md-3">
+        <small class="text-muted">Observacion</small>
+        <div>{{ pago.observacion or "Sin observacion" }}</div>
+      </div>
+    </div>
+    {% if puede_escribir and pago.estado == "REGISTRADO" and not detalle.aplicaciones %}
+      <form method="post" action="{{ url_for('finanzas.anular_pago_financiero', pago_id=pago.id) }}" class="mt-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-outline-danger" type="submit">
+          <i class="bi bi-x-circle"></i> Anular pago
+        </button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-bold">Aplicaciones existentes</div>
+  <div class="card-body table-responsive">
+    <table class="table table-striped align-middle">
+      <thead>
+        <tr>
+          <th>Periodo</th>
+          <th>Obligacion</th>
+          <th>Concepto</th>
+          <th>Monto aplicado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in detalle.aplicaciones %}
+          <tr>
+            <td>{{ item.obligacion.periodo }}</td>
+            <td>{{ item.obligacion.tipo_obligacion }}</td>
+            <td>{{ item.obligacion.concepto }}</td>
+            <td>$ {{ "%.2f"|format(item.aplicacion.valor_aplicado) }}</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="4" class="text-center text-muted">Pago sin aplicaciones</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if puede_escribir and pago.estado == "REGISTRADO" and detalle.saldo_sin_aplicar > 0 %}
+<div class="card shadow-sm">
+  <div class="card-header fw-bold">Aplicar pago</div>
+  <div class="card-body table-responsive">
+    <form method="post" action="{{ url_for('finanzas.aplicar_pago_financiero', pago_id=pago.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <table class="table table-striped align-middle">
+        <thead>
+          <tr>
+            <th>Periodo</th>
+            <th>Concepto</th>
+            <th>Condicion</th>
+            <th>Saldo</th>
+            <th>Aplicar</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in obligaciones_aplicables %}
+            <tr>
+              <td>{{ item.obligacion.periodo }}</td>
+              <td>{{ item.obligacion.concepto }}</td>
+              <td>
+                {{ item.condicion_temporal }}
+                {% if item.dias_atraso %}
+                  <span class="text-muted small">{{ item.dias_atraso }} días</span>
+                {% endif %}
+              </td>
+              <td>$ {{ "%.2f"|format(item.saldo) }}</td>
+              <td>
+                <input class="form-control" name="aplicar_{{ item.obligacion.id }}" inputmode="decimal" placeholder="0.00">
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="5" class="text-center text-muted">Sin obligaciones pendientes para aplicar</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button class="btn btn-primary" type="submit" {% if not obligaciones_aplicables %}disabled{% endif %}>
+        <i class="bi bi-check2-circle"></i> Aplicar valores
+      </button>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,7 +1,9 @@
 from .asignaciones import asignar_plan_financiero, resolver_tarifario_vigente
 from .cartera import (
     obtener_cartera_alumnos,
+    obtener_detalle_pago,
     obtener_estado_cuenta_alumno,
+    obtener_obligaciones_aplicables_pago,
     obtener_obligaciones_alumno,
     obtener_pagos_alumno,
     obtener_resumen_cartera_academia,
@@ -28,7 +30,9 @@ from .vencimientos import (
     validar_dia_vencimiento_pension,
 )
 from .pagos import (
+    MEDIOS_PAGO_FINANCIERO,
     anular_pago,
+    aplicar_pago_a_obligaciones,
     aplicar_pago,
     calcular_saldo_obligacion,
     calcular_saldo_pago,

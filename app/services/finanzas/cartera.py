@@ -9,7 +9,9 @@ from app.models.alumno import Alumno
 from app.models.finanzas import ObligacionFinanciera, PagoAplicacion, PagoFinanciero
 from app.services.finanzas.familias import FinanzasError
 from app.services.finanzas.pagos import (
+    calcular_saldo_obligacion,
     calcular_saldo_pago,
+    calcular_total_aplicado_pago,
     obtener_estado_pago_obligacion,
 )
 from app.services.finanzas.tarifas import redondear_dinero
@@ -79,6 +81,30 @@ class PagoEstadoCuenta:
     pago: PagoFinanciero
     total_aplicado: Decimal
     saldo_sin_aplicar: Decimal
+
+
+@dataclass(frozen=True)
+class AplicacionPagoDetalle:
+    aplicacion: PagoAplicacion
+    obligacion: ObligacionFinanciera
+
+
+@dataclass(frozen=True)
+class PagoDetalle:
+    pago: PagoFinanciero
+    alumno: Alumno
+    total_aplicado: Decimal
+    saldo_sin_aplicar: Decimal
+    aplicaciones: list[AplicacionPagoDetalle]
+
+
+@dataclass(frozen=True)
+class ObligacionAplicablePago:
+    obligacion: ObligacionFinanciera
+    saldo: Decimal
+    estado_derivado: str
+    condicion_temporal: str
+    dias_atraso: int
 
 
 @dataclass(frozen=True)
@@ -206,6 +232,75 @@ def obtener_pagos_alumno(*, academia_id: int, alumno_id: int, incluir_anulados: 
         saldo = Decimal("0.00") if pago.estado == "ANULADO" else calcular_saldo_pago(academia_id=academia_id, pago_id=pago.id)
         resultado.append(PagoEstadoCuenta(pago=pago, total_aplicado=total_aplicado, saldo_sin_aplicar=saldo))
     return resultado
+
+
+def obtener_detalle_pago(*, academia_id: int, pago_id: int) -> PagoDetalle:
+    pago = PagoFinanciero.query.filter_by(id=pago_id, academia_id=academia_id).first()
+    if pago is None:
+        raise FinanzasError("Pago no pertenece a la academia indicada")
+    alumno = _alumno_de_academia(academia_id, pago.alumno_id)
+    aplicaciones = (
+        db.session.query(PagoAplicacion, ObligacionFinanciera)
+        .join(ObligacionFinanciera, ObligacionFinanciera.id == PagoAplicacion.obligacion_financiera_id)
+        .filter(
+            PagoAplicacion.academia_id == academia_id,
+            PagoAplicacion.pago_id == pago.id,
+            ObligacionFinanciera.academia_id == academia_id,
+        )
+        .order_by(ObligacionFinanciera.periodo.asc(), PagoAplicacion.id.asc())
+        .all()
+    )
+    return PagoDetalle(
+        pago=pago,
+        alumno=alumno,
+        total_aplicado=calcular_total_aplicado_pago(academia_id=academia_id, pago_id=pago.id),
+        saldo_sin_aplicar=Decimal("0.00") if pago.estado == "ANULADO" else calcular_saldo_pago(academia_id=academia_id, pago_id=pago.id),
+        aplicaciones=[AplicacionPagoDetalle(aplicacion=aplicacion, obligacion=obligacion) for aplicacion, obligacion in aplicaciones],
+    )
+
+
+def obtener_obligaciones_aplicables_pago(
+    *,
+    academia_id: int,
+    pago_id: int,
+    fecha_referencia: date | None = None,
+) -> list[ObligacionAplicablePago]:
+    detalle = obtener_detalle_pago(academia_id=academia_id, pago_id=pago_id)
+    fecha_referencia = fecha_referencia or date.today()
+    if detalle.pago.estado == "ANULADO":
+        return []
+
+    obligaciones = []
+    for item in obtener_obligaciones_alumno(
+        academia_id=academia_id,
+        alumno_id=detalle.pago.alumno_id,
+        incluir_anuladas=False,
+        fecha_referencia=fecha_referencia,
+    ):
+        saldo = calcular_saldo_obligacion(
+            academia_id=academia_id,
+            obligacion_financiera_id=item.obligacion.id,
+        )
+        if saldo <= 0:
+            continue
+        obligaciones.append(
+            ObligacionAplicablePago(
+                obligacion=item.obligacion,
+                saldo=saldo,
+                estado_derivado=item.estado_derivado,
+                condicion_temporal=item.condicion_temporal,
+                dias_atraso=item.dias_atraso,
+            )
+        )
+
+    def ordenar(item: ObligacionAplicablePago):
+        if item.condicion_temporal == CONDICION_VENCIDA:
+            return (0, item.obligacion.fecha_vencimiento or date.max, item.obligacion.periodo)
+        if item.obligacion.fecha_vencimiento is not None:
+            return (1, item.obligacion.fecha_vencimiento, item.obligacion.periodo)
+        return (2, date.max, item.obligacion.periodo)
+
+    return sorted(obligaciones, key=ordenar)
 
 
 def obtener_estado_cuenta_alumno(
