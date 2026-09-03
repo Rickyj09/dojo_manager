@@ -6,6 +6,8 @@ import pytest
 from app.models.finanzas import (
     FrecuenciaEntrenamiento,
     ObligacionFinanciera,
+    PagoAplicacion,
+    PagoFinanciero,
     PlanFinanciero,
     TarifaPlan,
     Tarifario,
@@ -19,7 +21,7 @@ from app.services.finanzas.cartera import (
     obtener_resumen_cartera_academia,
 )
 from app.services.finanzas.obligaciones import generar_obligaciones_mensuales
-from app.services.finanzas.pagos import aplicar_pago, registrar_pago
+from app.services.finanzas.pagos import aplicar_pago, calcular_saldo_obligacion, calcular_saldo_pago, registrar_pago
 from app.services.finanzas.vencimientos import (
     CONDICION_SIN_VENCIMIENTO,
     CONDICION_VENCIDA,
@@ -601,3 +603,330 @@ def test_profesor_no_puede_configurar_finanzas(app, db, base_data):
     response = client.get("/finanzas/configuracion")
 
     assert response.status_code == 403
+
+
+def test_vista_nuevo_pago_get_autorizado(app, db, base_data):
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(f"/finanzas/alumnos/{base_data['alumno_a1'].id}/pagos/nuevo")
+
+    assert response.status_code == 200
+    assert b"Registrar pago" in response.data
+    assert b"EFECTIVO" in response.data
+
+
+def test_vista_nuevo_pago_post_valido_redirige_y_crea_pago(app, db, base_data):
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.post(
+        f"/finanzas/alumnos/{base_data['alumno_a1'].id}/pagos/nuevo",
+        data={
+            "fecha_pago": "2026-09-05",
+            "valor": "100.00",
+            "moneda": "USD",
+            "medio_pago": "TRANSFERENCIA",
+            "referencia": "REC-100",
+            "observacion": "Pago de prueba",
+        },
+    )
+
+    pago = PagoFinanciero.query.filter_by(academia_id=base_data["academia_a"].id, alumno_id=base_data["alumno_a1"].id).one()
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith(f"/finanzas/pagos/{pago.id}")
+    assert pago.valor == Decimal("100.00")
+    assert pago.medio_pago == "TRANSFERENCIA"
+
+
+@pytest.mark.parametrize("valor", ["0", "-10"])
+def test_vista_nuevo_pago_rechaza_valor_no_positivo(app, db, base_data, valor):
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.post(
+        f"/finanzas/alumnos/{base_data['alumno_a1'].id}/pagos/nuevo",
+        data={"fecha_pago": "2026-09-05", "valor": valor, "moneda": "USD", "medio_pago": "EFECTIVO"},
+    )
+
+    assert response.status_code == 200
+    assert b"mayor a cero" in response.data
+    assert PagoFinanciero.query.filter_by(academia_id=base_data["academia_a"].id).count() == 0
+
+
+def test_vista_nuevo_pago_rechaza_valor_no_numerico(app, db, base_data):
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.post(
+        f"/finanzas/alumnos/{base_data['alumno_a1'].id}/pagos/nuevo",
+        data={"fecha_pago": "2026-09-05", "valor": "abc", "moneda": "USD", "medio_pago": "EFECTIVO"},
+    )
+
+    assert response.status_code == 200
+    assert b"numero valido" in response.data
+
+
+def test_vista_nuevo_pago_rechaza_medio_invalido(app, db, base_data):
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.post(
+        f"/finanzas/alumnos/{base_data['alumno_a1'].id}/pagos/nuevo",
+        data={"fecha_pago": "2026-09-05", "valor": "10.00", "moneda": "USD", "medio_pago": "CHEQUE"},
+    )
+
+    assert response.status_code == 200
+    assert b"Medio de pago invalido" in response.data
+
+
+def test_vista_nuevo_pago_bloquea_alumno_de_otra_academia(app, db, base_data):
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(f"/finanzas/alumnos/{base_data['alumno_b1'].id}/pagos/nuevo")
+
+    assert response.status_code == 404
+
+
+def test_profesor_no_puede_registrar_pago(app, db, base_data):
+    client = app.test_client()
+    login(client, base_data["profesor_a"])
+
+    response = client.get(f"/finanzas/alumnos/{base_data['alumno_a1'].id}/pagos/nuevo")
+
+    assert response.status_code == 403
+
+
+def test_profesor_no_ve_acciones_de_pago(app, db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="60.00")
+    pago = registrar_pago(academia_id=obligacion.academia_id, alumno_id=obligacion.alumno_id, fecha_pago=date(2026, 9, 5), valor=Decimal("10.00"), medio_pago="EFECTIVO")
+    db.session.commit()
+    client = app.test_client()
+    login(client, base_data["profesor_a"])
+
+    cartera_response = client.get("/finanzas/cartera")
+    estado_response = client.get(f"/finanzas/alumnos/{obligacion.alumno_id}/estado-cuenta")
+    detalle_response = client.get(f"/finanzas/pagos/{pago.id}")
+
+    assert cartera_response.status_code == 200
+    assert estado_response.status_code == 200
+    assert detalle_response.status_code == 200
+    assert b"Registrar pago" not in cartera_response.data
+    assert b"Registrar pago" not in estado_response.data
+    assert b"Aplicar pago" not in detalle_response.data
+    assert b"Anular pago" not in detalle_response.data
+
+
+def test_vista_detalle_pago(app, db, base_data):
+    pago = registrar_pago(academia_id=base_data["academia_a"].id, alumno_id=base_data["alumno_a1"].id, fecha_pago=date(2026, 9, 5), valor=Decimal("100.00"), medio_pago="EFECTIVO", referencia="REC-1")
+    db.session.commit()
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(f"/finanzas/pagos/{pago.id}")
+
+    assert response.status_code == 200
+    assert b"Pago financiero" in response.data
+    assert b"REC-1" in response.data
+    assert b"Disponible" in response.data
+
+
+def test_vista_detalle_pago_bloquea_otro_tenant(app, db, base_data):
+    pago = registrar_pago(academia_id=base_data["academia_b"].id, alumno_id=base_data["alumno_b1"].id, fecha_pago=date(2026, 9, 5), valor=Decimal("100.00"), medio_pago="EFECTIVO")
+    db.session.commit()
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(f"/finanzas/pagos/{pago.id}")
+
+    assert response.status_code == 404
+
+
+def test_vista_aplicar_pago_completo(app, db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="50.00")
+    pago = registrar_pago(academia_id=obligacion.academia_id, alumno_id=obligacion.alumno_id, fecha_pago=date(2026, 9, 5), valor=Decimal("50.00"), medio_pago="EFECTIVO")
+    db.session.commit()
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.post(f"/finanzas/pagos/{pago.id}/aplicar", data={f"aplicar_{obligacion.id}": "50.00"})
+
+    assert response.status_code == 302
+    assert calcular_saldo_obligacion(academia_id=obligacion.academia_id, obligacion_financiera_id=obligacion.id) == Decimal("0.00")
+    assert calcular_saldo_pago(academia_id=obligacion.academia_id, pago_id=pago.id) == Decimal("0.00")
+
+
+def test_vista_aplicar_pago_parcial(app, db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="50.00")
+    pago = registrar_pago(academia_id=obligacion.academia_id, alumno_id=obligacion.alumno_id, fecha_pago=date(2026, 9, 5), valor=Decimal("20.00"), medio_pago="EFECTIVO")
+    db.session.commit()
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    client.post(f"/finanzas/pagos/{pago.id}/aplicar", data={f"aplicar_{obligacion.id}": "20.00"})
+
+    assert calcular_saldo_obligacion(academia_id=obligacion.academia_id, obligacion_financiera_id=obligacion.id) == Decimal("30.00")
+
+
+def test_vista_aplicar_pago_a_varias_obligaciones(app, db, base_data):
+    obligacion_1 = crear_plan_y_obligacion(db, base_data, periodo="2026-09", valor="50.00")
+    obligacion_2 = crear_obligacion_manual(db, obligacion_1, periodo="2026-10", valor="50.00")
+    pago = registrar_pago(academia_id=obligacion_1.academia_id, alumno_id=obligacion_1.alumno_id, fecha_pago=date(2026, 10, 5), valor=Decimal("100.00"), medio_pago="EFECTIVO")
+    db.session.commit()
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    client.post(
+        f"/finanzas/pagos/{pago.id}/aplicar",
+        data={f"aplicar_{obligacion_1.id}": "50.00", f"aplicar_{obligacion_2.id}": "50.00"},
+    )
+
+    assert PagoAplicacion.query.filter_by(academia_id=obligacion_1.academia_id, pago_id=pago.id).count() == 2
+    assert calcular_saldo_pago(academia_id=obligacion_1.academia_id, pago_id=pago.id) == Decimal("0.00")
+
+
+def test_vista_sobreaplicacion_rechazada_no_persiste(app, db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="50.00")
+    pago = registrar_pago(academia_id=obligacion.academia_id, alumno_id=obligacion.alumno_id, fecha_pago=date(2026, 9, 5), valor=Decimal("100.00"), medio_pago="EFECTIVO")
+    db.session.commit()
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.post(f"/finanzas/pagos/{pago.id}/aplicar", data={f"aplicar_{obligacion.id}": "60.00"}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"saldo de la obligacion" in response.data
+    assert PagoAplicacion.query.filter_by(academia_id=obligacion.academia_id, pago_id=pago.id).count() == 0
+
+
+def test_vista_aplicacion_a_obligacion_de_otro_alumno_rechazada(app, db, base_data):
+    obligacion_juan = crear_plan_y_obligacion(db, base_data, alumno_key="alumno_a1", valor="50.00")
+    obligacion_maria = crear_plan_y_obligacion(db, base_data, alumno_key="alumno_a2", periodo="2026-10", valor="50.00")
+    pago = registrar_pago(academia_id=obligacion_juan.academia_id, alumno_id=obligacion_juan.alumno_id, fecha_pago=date(2026, 10, 5), valor=Decimal("100.00"), medio_pago="EFECTIVO")
+    db.session.commit()
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.post(f"/finanzas/pagos/{pago.id}/aplicar", data={f"aplicar_{obligacion_maria.id}": "50.00"}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"no pertenece al alumno" in response.data
+    assert PagoAplicacion.query.filter_by(academia_id=obligacion_juan.academia_id, pago_id=pago.id).count() == 0
+
+
+def test_vista_aplicacion_a_obligacion_de_otro_tenant_rechazada(app, db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="50.00")
+    obligacion_b = ObligacionFinanciera(
+        academia_id=base_data["academia_b"].id,
+        alumno_id=base_data["alumno_b1"].id,
+        periodo="2026-09",
+        tipo_obligacion="PENSION",
+        concepto="Pension 2026-09",
+        origen="TEST",
+        fecha_emision=date(2026, 9, 1),
+        tarifa_base_snapshot=Decimal("50.00"),
+        valor_descuento_snapshot=Decimal("0.00"),
+        valor_final_snapshot=Decimal("50.00"),
+        moneda_snapshot="USD",
+        estado="PENDIENTE",
+    )
+    db.session.add(obligacion_b)
+    pago = registrar_pago(academia_id=obligacion.academia_id, alumno_id=obligacion.alumno_id, fecha_pago=date(2026, 9, 5), valor=Decimal("100.00"), medio_pago="EFECTIVO")
+    db.session.commit()
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.post(f"/finanzas/pagos/{pago.id}/aplicar", data={f"aplicar_{obligacion_b.id}": "50.00"}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Obligacion no pertenece" in response.data
+    assert PagoAplicacion.query.filter_by(academia_id=obligacion.academia_id, pago_id=pago.id).count() == 0
+
+
+def test_vista_pago_sin_saldo_no_acepta_nueva_aplicacion(app, db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="50.00")
+    obligacion_2 = crear_obligacion_manual(db, obligacion, periodo="2026-10", valor="50.00")
+    pago = registrar_pago(academia_id=obligacion.academia_id, alumno_id=obligacion.alumno_id, fecha_pago=date(2026, 9, 5), valor=Decimal("50.00"), medio_pago="EFECTIVO")
+    aplicar_pago(academia_id=obligacion.academia_id, pago_id=pago.id, obligacion_financiera_id=obligacion.id, valor_aplicado=Decimal("50.00"))
+    db.session.commit()
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.post(f"/finanzas/pagos/{pago.id}/aplicar", data={f"aplicar_{obligacion_2.id}": "1.00"}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"saldo disponible" in response.data
+    assert PagoAplicacion.query.filter_by(academia_id=obligacion.academia_id, pago_id=pago.id).count() == 1
+
+
+def test_estado_cuenta_y_cartera_reflejan_pago_aplicado(app, db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="50.00")
+    pago = registrar_pago(academia_id=obligacion.academia_id, alumno_id=obligacion.alumno_id, fecha_pago=date(2026, 9, 5), valor=Decimal("50.00"), medio_pago="EFECTIVO")
+    db.session.commit()
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    client.post(f"/finanzas/pagos/{pago.id}/aplicar", data={f"aplicar_{obligacion.id}": "20.00"})
+    estado = client.get(f"/finanzas/alumnos/{obligacion.alumno_id}/estado-cuenta")
+    cartera = client.get("/finanzas/cartera")
+
+    assert b"PARCIAL" in estado.data
+    assert b"30.00" in estado.data
+    assert b"30.00" in cartera.data
+
+
+def test_vista_detalle_muestra_saldo_sin_aplicar(app, db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="50.00")
+    pago = registrar_pago(academia_id=obligacion.academia_id, alumno_id=obligacion.alumno_id, fecha_pago=date(2026, 9, 5), valor=Decimal("100.00"), medio_pago="EFECTIVO")
+    aplicar_pago(academia_id=obligacion.academia_id, pago_id=pago.id, obligacion_financiera_id=obligacion.id, valor_aplicado=Decimal("50.00"))
+    db.session.commit()
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(f"/finanzas/pagos/{pago.id}")
+
+    assert response.status_code == 200
+    assert b"Disponible" in response.data
+    assert b"50.00" in response.data
+
+
+def test_vista_anular_pago_sin_aplicaciones(app, db, base_data):
+    pago = registrar_pago(academia_id=base_data["academia_a"].id, alumno_id=base_data["alumno_a1"].id, fecha_pago=date(2026, 9, 5), valor=Decimal("50.00"), medio_pago="EFECTIVO")
+    db.session.commit()
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.post(f"/finanzas/pagos/{pago.id}/anular")
+
+    assert response.status_code == 302
+    assert PagoFinanciero.query.filter_by(id=pago.id).one().estado == "ANULADO"
+
+
+def test_vista_bloquea_anulacion_con_aplicaciones(app, db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="50.00")
+    pago = registrar_pago(academia_id=obligacion.academia_id, alumno_id=obligacion.alumno_id, fecha_pago=date(2026, 9, 5), valor=Decimal("50.00"), medio_pago="EFECTIVO")
+    aplicar_pago(academia_id=obligacion.academia_id, pago_id=pago.id, obligacion_financiera_id=obligacion.id, valor_aplicado=Decimal("20.00"))
+    db.session.commit()
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.post(f"/finanzas/pagos/{pago.id}/anular", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"No se puede anular este pago porque tiene valores aplicados" in response.data
+    assert PagoFinanciero.query.filter_by(id=pago.id).one().estado == "REGISTRADO"
+
+
+def test_profesor_no_puede_aplicar_ni_anular_pago(app, db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="50.00")
+    pago = registrar_pago(academia_id=obligacion.academia_id, alumno_id=obligacion.alumno_id, fecha_pago=date(2026, 9, 5), valor=Decimal("50.00"), medio_pago="EFECTIVO")
+    db.session.commit()
+    client = app.test_client()
+    login(client, base_data["profesor_a"])
+
+    aplicar_response = client.post(f"/finanzas/pagos/{pago.id}/aplicar", data={f"aplicar_{obligacion.id}": "10.00"})
+    anular_response = client.post(f"/finanzas/pagos/{pago.id}/anular")
+
+    assert aplicar_response.status_code == 403
+    assert anular_response.status_code == 403
