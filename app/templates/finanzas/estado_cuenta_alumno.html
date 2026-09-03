@@ -1,0 +1,127 @@
+{% extends "base_admin.html" %}
+{% block title %}Estado de cuenta{% endblock %}
+
+{% block content %}
+{% set alumno = estado_cuenta.alumno %}
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h3 class="mb-1">Estado de cuenta</h3>
+    <p class="text-muted mb-0">{{ alumno.nombres }} {{ alumno.apellidos }}</p>
+  </div>
+  <a href="{{ url_for('finanzas.cartera') }}" class="btn btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Cartera
+  </a>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <small class="text-muted">Total generado</small>
+        <h4>$ {{ "%.2f"|format(estado_cuenta.total_generado) }}</h4>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <small class="text-muted">Total aplicado</small>
+        <h4>$ {{ "%.2f"|format(estado_cuenta.total_pagado) }}</h4>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <small class="text-muted">Saldo pendiente</small>
+        <h4>$ {{ "%.2f"|format(estado_cuenta.saldo_pendiente) }}</h4>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <small class="text-muted">Saldo de pagos sin aplicar</small>
+        <h4>$ {{ "%.2f"|format(estado_cuenta.saldo_pagos_sin_aplicar) }}</h4>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-bold">Obligaciones</div>
+  <div class="card-body table-responsive">
+    <table class="table table-striped align-middle">
+      <thead>
+        <tr>
+          <th>Periodo</th>
+          <th>Tipo</th>
+          <th>Concepto</th>
+          <th>Valor original</th>
+          <th>Aplicado</th>
+          <th>Saldo</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in estado_cuenta.obligaciones %}
+          <tr>
+            <td>{{ item.obligacion.periodo }}</td>
+            <td>{{ item.obligacion.tipo_obligacion }}</td>
+            <td>{{ item.obligacion.concepto }}</td>
+            <td>$ {{ "%.2f"|format(item.valor_original) }}</td>
+            <td>$ {{ "%.2f"|format(item.total_aplicado) }}</td>
+            <td>$ {{ "%.2f"|format(item.saldo) }}</td>
+            <td>
+              <span class="badge {% if item.estado_derivado == 'PAGADA' %}bg-success{% elif item.estado_derivado == 'PARCIAL' %}bg-warning text-dark{% elif item.estado_derivado == 'ANULADA' %}bg-secondary{% else %}bg-danger{% endif %}">
+                {{ item.estado_derivado }}
+              </span>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="7" class="text-center text-muted">Sin obligaciones financieras</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header fw-bold">Pagos</div>
+  <div class="card-body table-responsive">
+    <table class="table table-striped align-middle">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Valor</th>
+          <th>Medio</th>
+          <th>Referencia</th>
+          <th>Aplicado</th>
+          <th>Saldo sin aplicar</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in estado_cuenta.pagos %}
+          <tr>
+            <td>{{ item.pago.fecha_pago.strftime("%d/%m/%Y") }}</td>
+            <td>$ {{ "%.2f"|format(item.pago.valor) }}</td>
+            <td>{{ item.pago.medio_pago }}</td>
+            <td>{{ item.pago.referencia or "Sin referencia" }}</td>
+            <td>$ {{ "%.2f"|format(item.total_aplicado) }}</td>
+            <td>$ {{ "%.2f"|format(item.saldo_sin_aplicar) }}</td>
+            <td>{{ item.pago.estado }}</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="7" class="text-center text-muted">Sin pagos financieros</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

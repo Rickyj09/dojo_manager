@@ -111,6 +111,28 @@
       </a>
     </li>
 
+    <li class="nav-item">
+      <a class="nav-link text-white {% if ep.startswith('finanzas.') %}active{% endif %}"
+         data-bs-toggle="collapse"
+         href="#menuFinanzas"
+         role="button"
+         aria-expanded="{% if ep.startswith('finanzas.') %}true{% else %}false{% endif %}">
+        <i class="bi bi-cash-stack me-2"></i> Finanzas
+        <i class="bi bi-chevron-down float-end"></i>
+      </a>
+
+      <div class="collapse {% if ep.startswith('finanzas.') %}show{% endif %}" id="menuFinanzas">
+        <ul class="nav flex-column ms-3 mt-1">
+          <li class="nav-item">
+            <a class="nav-link text-white-50 {% if ep == 'finanzas.cartera' %}active{% endif %}"
+               href="{{ url_for('finanzas.cartera') }}">
+              <i class="bi bi-wallet2 me-2"></i> Cartera
+            </a>
+          </li>
+        </ul>
+      </div>
+    </li>
+
     <!-- REPORTES -->
     <li class="nav-item">
       <a class="nav-link text-white {% if ep.startswith('reportes.') or ep.startswith('resultados.') %}active{% endif %}"

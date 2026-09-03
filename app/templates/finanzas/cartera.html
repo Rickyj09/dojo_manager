@@ -1,0 +1,117 @@
+{% extends "base_admin.html" %}
+{% block title %}Cartera financiera{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h3 class="mb-1">Cartera financiera</h3>
+    <p class="text-muted mb-0">Obligaciones y pagos del dominio financiero nuevo.</p>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <small class="text-muted">Total generado</small>
+        <h4 class="mb-0">$ {{ "%.2f"|format(resumen.total_obligaciones) }}</h4>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <small class="text-muted">Total aplicado</small>
+        <h4 class="mb-0">$ {{ "%.2f"|format(resumen.total_aplicado) }}</h4>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <small class="text-muted">Saldo pendiente</small>
+        <h4 class="mb-0">$ {{ "%.2f"|format(resumen.saldo_pendiente) }}</h4>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <small class="text-muted">Saldo de pagos sin aplicar</small>
+        <h4 class="mb-0">$ {{ "%.2f"|format(resumen.saldo_pagos_sin_aplicar) }}</h4>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <form class="row g-2 align-items-end" method="get">
+      <div class="col-md-5">
+        <label class="form-label">Alumno</label>
+        <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Nombre, apellido o identificación">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Saldo</label>
+        <select class="form-select" name="saldo">
+          <option value="todos" {% if filtro == "todos" %}selected{% endif %}>Todos</option>
+          <option value="con_saldo" {% if filtro == "con_saldo" %}selected{% endif %}>Con saldo</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Periodo</label>
+        <input class="form-control" name="periodo" value="{{ periodo }}" placeholder="YYYY-MM">
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-primary w-100" type="submit">
+          <i class="bi bi-search"></i> Buscar
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body table-responsive">
+    <table class="table table-striped align-middle">
+      <thead class="table-dark">
+        <tr>
+          <th>Alumno</th>
+          <th>Total</th>
+          <th>Aplicado</th>
+          <th>Saldo</th>
+          <th>Pagos sin aplicar</th>
+          <th>Pendientes</th>
+          <th>Parciales</th>
+          <th>Último pago</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for fila in alumnos %}
+          <tr>
+            <td>{{ fila.nombre }}</td>
+            <td>$ {{ "%.2f"|format(fila.total_obligaciones) }}</td>
+            <td>$ {{ "%.2f"|format(fila.total_aplicado) }}</td>
+            <td>$ {{ "%.2f"|format(fila.saldo_pendiente) }}</td>
+            <td>$ {{ "%.2f"|format(fila.saldo_pagos_sin_aplicar) }}</td>
+            <td>{{ fila.cantidad_obligaciones_pendientes }}</td>
+            <td>{{ fila.cantidad_obligaciones_parciales }}</td>
+            <td>{{ fila.ultima_fecha_pago.strftime("%d/%m/%Y") if fila.ultima_fecha_pago else "Sin pagos" }}</td>
+            <td class="text-end">
+              <a class="btn btn-outline-primary btn-sm"
+                 href="{{ url_for('finanzas.estado_cuenta_alumno', alumno_id=fila.alumno_id) }}">
+                <i class="bi bi-file-text"></i> Estado
+              </a>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="9" class="text-center text-muted">Sin alumnos para mostrar</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
