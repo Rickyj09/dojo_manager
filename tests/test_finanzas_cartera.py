@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+from html.parser import HTMLParser
 
 import pytest
 
@@ -930,3 +931,163 @@ def test_profesor_no_puede_aplicar_ni_anular_pago(app, db, base_data):
 
     assert aplicar_response.status_code == 403
     assert anular_response.status_code == 403
+
+
+class FormulariosPagoHTML(HTMLParser):
+    """Extrae controles del formulario renderizado, sin inventar nombres del POST."""
+
+    def __init__(self, html):
+        super().__init__()
+        self.formularios = []
+        self.actual = None
+        self.select = None
+        self.feed(html)
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "form":
+            assert self.actual is None, "El HTML no debe contener formularios anidados"
+            self.actual = {"action": attrs.get("action", ""), "data": {}}
+            assert attrs.get("method", "get").lower() == "post"
+            self.formularios.append(self.actual)
+        elif self.actual is not None and "disabled" not in attrs:
+            if tag == "input" and attrs.get("name"):
+                if attrs.get("type") not in {"file", "submit", "button", "checkbox", "radio"}:
+                    assert attrs["name"] not in self.actual["data"]
+                    self.actual["data"][attrs["name"]] = attrs.get("value", "")
+            elif tag == "select":
+                self.select = attrs.get("name")
+            elif tag == "option" and self.select:
+                if self.select not in self.actual["data"] or "selected" in attrs:
+                    self.actual["data"][self.select] = attrs.get("value", "")
+
+    def handle_endtag(self, tag):
+        if tag == "form":
+            self.actual = None
+        elif tag == "select":
+            self.select = None
+
+
+@pytest.mark.parametrize("rol", ["ADMIN", "SUPERADMIN"])
+@pytest.mark.parametrize(
+    "valores,mensaje",
+    [
+        (("50.00", ""), "Se aplicaron 1 valores"),
+        (("20.00", ""), "Se aplicaron 1 valores"),
+        (("50.00", "25.00"), "Se aplicaron 2 valores"),
+        (("", "  "), "Debe indicar al menos una aplicacion"),
+        (("10.00", "51.00"), "excede el saldo de la obligacion"),
+        (("0", ""), "mayor a cero"),
+        (("-1", ""), "mayor a cero"),
+    ],
+    ids=["completo", "parcial", "varias", "sin_aplicaciones", "sobre_saldo", "cero", "negativo"],
+)
+def test_envio_formularios_html_pago(app, db, base_data, monkeypatch, rol, valores, mensaje):
+    from app.models.role import Role
+    from app.routes import finanzas
+
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="50.00")
+    segunda = crear_obligacion_manual(db, obligacion, "2026-10", "50.00")
+    if rol == "SUPERADMIN":
+        superadmin = Role(name="SUPERADMIN")
+        db.session.add(superadmin)
+        base_data["admin_a"].roles = [superadmin]
+    db.session.commit()
+    legacy_antes = [(p.id, p.monto) for p in Pago.query.all()]
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+    # Usar tambien el token generado por el HTML durante ambos POST financieros.
+    monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", True)
+    url = f"/finanzas/alumnos/{obligacion.alumno_id}/pagos/nuevo"
+    html = client.get(url)
+    assert html.status_code == 200
+    formulario = next(f for f in FormulariosPagoHTML(html.text).formularios if "valor" in f["data"])
+    formulario["data"]["valor"] = "100.00"
+    response = client.post(formulario["action"] or url, data=formulario["data"])
+    assert response.status_code == 302
+    pago = PagoFinanciero.query.one()
+    assert pago.valor == Decimal("100.00")
+    assert PagoAplicacion.query.count() == 0
+    html = client.get(response.headers["Location"])
+    formulario = next(f for f in FormulariosPagoHTML(html.text).formularios if f["action"].endswith("/aplicar"))
+    campos = [k for k in formulario["data"] if k != "csrf_token"]
+    assert campos == [f"aplicar_{obligacion.id}", f"aplicar_{segunda.id}"]
+    for campo, valor in zip(campos, valores):
+        formulario["data"][campo] = valor
+
+    recibidas = []
+    servicio_real = finanzas.aplicar_pago_a_obligaciones
+
+    def capturar_aplicaciones(**kwargs):
+        recibidas.extend(kwargs["aplicaciones"])
+        return servicio_real(**kwargs)
+
+    monkeypatch.setattr(finanzas, "aplicar_pago_a_obligaciones", capturar_aplicaciones)
+    response = client.post(formulario["action"], data=formulario["data"], follow_redirects=True)
+    assert response.status_code == 200
+    assert mensaje in response.text
+    assert recibidas == [
+        {"obligacion_financiera_id": o.id, "valor_aplicado": v.strip()}
+        for o, v in zip((obligacion, segunda), valores) if v.strip()
+    ]
+    exito = mensaje.startswith("Se aplicaron")
+    aplicaciones = PagoAplicacion.query.order_by(PagoAplicacion.obligacion_financiera_id).all()
+    esperadas = [(o.id, Decimal(v)) for o, v in zip((obligacion, segunda), valores) if v.strip()] if exito else []
+    assert [(a.obligacion_financiera_id, a.valor_aplicado) for a in aplicaciones] == esperadas
+    assert all(a.academia_id == obligacion.academia_id and a.pago_id == pago.id for a in aplicaciones)
+    total = sum((v for _, v in esperadas), Decimal("0.00"))
+    assert calcular_saldo_pago(academia_id=pago.academia_id, pago_id=pago.id) == Decimal("100.00") - total
+    for o, v in zip((obligacion, segunda), valores):
+        aplicado = Decimal(v) if exito and v.strip() else Decimal("0.00")
+        assert calcular_saldo_obligacion(academia_id=o.academia_id, obligacion_financiera_id=o.id) == Decimal("50.00") - aplicado
+    assert [(p.id, p.monto) for p in Pago.query.all()] == legacy_antes
+
+
+def test_formulario_aplicacion_aisla_academias_y_rechaza_post_manipulado(app, db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="50.00")
+    ajena = ObligacionFinanciera(
+        academia_id=base_data["academia_b"].id,
+        alumno_id=base_data["alumno_b1"].id,
+        periodo="2026-09", tipo_obligacion="PENSION", concepto="Pension academia B",
+        fecha_emision=date(2026, 9, 1), tarifa_base_snapshot=Decimal("50.00"),
+        valor_descuento_snapshot=Decimal("0.00"), valor_final_snapshot=Decimal("50.00"),
+        moneda_snapshot="USD", estado="PENDIENTE",
+    )
+    db.session.add(ajena)
+    pago = registrar_pago(
+        academia_id=obligacion.academia_id, alumno_id=obligacion.alumno_id,
+        fecha_pago=date(2026, 9, 5), valor="100.00", medio_pago="EFECTIVO",
+    )
+    db.session.commit()
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+    html = client.get(f"/finanzas/pagos/{pago.id}")
+    formulario = next(f for f in FormulariosPagoHTML(html.text).formularios if f["action"].endswith("/aplicar"))
+    assert f"aplicar_{obligacion.id}" in formulario["data"]
+    assert f"aplicar_{ajena.id}" not in formulario["data"]
+    # Un lote con una fila propia valida y otra ajena debe rechazarse entero.
+    formulario["data"][f"aplicar_{obligacion.id}"] = "10.00"
+    formulario["data"][f"aplicar_{ajena.id}"] = "10.00"
+    response = client.post(formulario["action"], data=formulario["data"], follow_redirects=True)
+    assert "Obligacion no pertenece a la academia indicada" in response.text
+    assert PagoAplicacion.query.count() == 0
+    assert calcular_saldo_pago(academia_id=pago.academia_id, pago_id=pago.id) == Decimal("100.00")
+    for o in (obligacion, ajena):
+        assert calcular_saldo_obligacion(academia_id=o.academia_id, obligacion_financiera_id=o.id) == Decimal("50.00")
+
+
+def test_post_aplicacion_no_permite_pago_de_otra_academia(app, db, base_data):
+    obligacion = crear_plan_y_obligacion(db, base_data, valor="50.00")
+    pago = registrar_pago(
+        academia_id=obligacion.academia_id, alumno_id=obligacion.alumno_id,
+        fecha_pago=date(2026, 9, 5), valor="50.00", medio_pago="EFECTIVO",
+    )
+    db.session.commit()
+    client = app.test_client()
+    login(client, base_data["admin_b"])
+    response = client.post(
+        f"/finanzas/pagos/{pago.id}/aplicar",
+        data={f"aplicar_{obligacion.id}": "50.00"}, follow_redirects=True,
+    )
+    assert response.status_code == 404
+    assert PagoAplicacion.query.count() == 0
