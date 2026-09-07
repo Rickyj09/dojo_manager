@@ -123,6 +123,9 @@
 
       <div class="collapse {% if ep.startswith('finanzas.') %}show{% endif %}" id="menuFinanzas">
         <ul class="nav flex-column ms-3 mt-1">
+          <li class="nav-item mt-2">
+            <span class="nav-link disabled text-uppercase small text-white-50 py-1">Operación</span>
+          </li>
           <li class="nav-item">
             <a class="nav-link text-white-50 {% if ep == 'finanzas.cartera' %}active{% endif %}"
                href="{{ url_for('finanzas.cartera') }}">
@@ -130,10 +133,13 @@
             </a>
           </li>
           {% if is_admin %}
+          <li class="nav-item mt-2">
+            <span class="nav-link disabled text-uppercase small text-white-50 py-1">Configuración</span>
+          </li>
           <li class="nav-item">
             <a class="nav-link text-white-50 {% if ep == 'finanzas.configuracion' %}active{% endif %}"
                href="{{ url_for('finanzas.configuracion') }}">
-              <i class="bi bi-gear me-2"></i> Configuracion
+              <i class="bi bi-gear me-2"></i> Política de vencimiento
             </a>
           </li>
           {% endif %}

@@ -29,6 +29,9 @@ from app.services.finanzas.familias import FinanzasError
 
 finanzas_bp = Blueprint("finanzas", __name__, url_prefix="/finanzas")
 
+ROLES_LECTURA_FINANZAS = ("SUPERADMIN", "ADMIN", "PROFESOR")
+ROLES_ADMINISTRACION_FINANZAS = ("SUPERADMIN", "ADMIN")
+
 
 def _academia_id_or_403():
     academia_id = getattr(current_user, "academia_id", None)
@@ -38,19 +41,14 @@ def _academia_id_or_403():
 
 
 def _puede_ver_finanzas():
-    return (
-        current_user.is_authenticated
-        and (
-            current_user.has_role("SUPERADMIN")
-            or current_user.has_role("ADMIN")
-            or current_user.has_role("PROFESOR")
-        )
+    return current_user.is_authenticated and any(
+        current_user.has_role(rol) for rol in ROLES_LECTURA_FINANZAS
     )
 
 
 def _puede_configurar_finanzas():
-    return current_user.is_authenticated and (
-        current_user.has_role("SUPERADMIN") or current_user.has_role("ADMIN")
+    return current_user.is_authenticated and any(
+        current_user.has_role(rol) for rol in ROLES_ADMINISTRACION_FINANZAS
     )
 
 
