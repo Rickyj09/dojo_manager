@@ -79,7 +79,9 @@ def test_navegacion_financiera_muestra_solo_opciones_implementadas(app, db, base
     assert b"Cartera" in response.data
     assert b"Configuraci" in response.data
     assert b"Pol" in response.data
-    assert b"Planes financieros" not in response.data
+    assert b"Planes financieros" in response.data
+    assert b"Frecuencias" in response.data
+    assert b"Tarifarios" not in response.data
     assert b"Generar pensiones" not in response.data
 
 

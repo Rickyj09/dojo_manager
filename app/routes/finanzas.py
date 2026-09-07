@@ -3,8 +3,10 @@ from datetime import date
 from flask import Blueprint, abort, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from werkzeug.exceptions import HTTPException
+from sqlalchemy.exc import IntegrityError
 
 from app.models.alumno import Alumno
+from app.models.finanzas import FrecuenciaEntrenamiento, PlanFinanciero
 from app.extensions import db
 from app.services.finanzas import (
     MEDIOS_PAGO_FINANCIERO,
@@ -91,6 +93,221 @@ def _aplicaciones_desde_formulario():
             }
         )
     return aplicaciones
+
+
+def _texto_obligatorio(nombre: str) -> str:
+    valor = (request.form.get(nombre) or "").strip()
+    if not valor:
+        raise FinanzasError(f"El campo {nombre.replace('_', ' ')} es obligatorio")
+    return valor
+
+
+def _entero_desde_formulario(nombre: str, *, minimo: int | None = None, default: int | None = None) -> int:
+    valor = (request.form.get(nombre) or "").strip()
+    if not valor and default is not None:
+        return default
+    try:
+        resultado = int(valor)
+    except ValueError as exc:
+        raise FinanzasError(f"El campo {nombre.replace('_', ' ')} debe ser un numero entero") from exc
+    if minimo is not None and resultado < minimo:
+        raise FinanzasError(f"El campo {nombre.replace('_', ' ')} debe ser mayor o igual a {minimo}")
+    return resultado
+
+
+def _plan_financiero_de_academia(academia_id: int, plan_id: int) -> PlanFinanciero:
+    plan = PlanFinanciero.query.filter_by(id=plan_id, academia_id=academia_id).first()
+    if plan is None:
+        abort(404)
+    return plan
+
+
+def _frecuencia_de_academia(academia_id: int, frecuencia_id: int) -> FrecuenciaEntrenamiento:
+    frecuencia = FrecuenciaEntrenamiento.query.filter_by(id=frecuencia_id, academia_id=academia_id).first()
+    if frecuencia is None:
+        abort(404)
+    return frecuencia
+
+
+def _guardar_catalogo_financiero(catalogo, campos: dict):
+    for nombre, valor in campos.items():
+        setattr(catalogo, nombre, valor)
+    db.session.add(catalogo)
+    try:
+        db.session.commit()
+    except (IntegrityError, ValueError) as exc:
+        db.session.rollback()
+        if isinstance(exc, IntegrityError):
+            raise FinanzasError("Ya existe un registro con ese codigo en la academia") from exc
+        raise FinanzasError(str(exc)) from exc
+
+
+@finanzas_bp.route("/planes")
+@login_required
+def planes():
+    if not _puede_configurar_finanzas():
+        abort(403)
+    academia_id = _academia_id_or_403()
+    planes_actuales = PlanFinanciero.query.filter_by(academia_id=academia_id).order_by(
+        PlanFinanciero.orden, PlanFinanciero.nombre, PlanFinanciero.id
+    ).all()
+    return render_template("finanzas/planes.html", planes=planes_actuales)
+
+
+@finanzas_bp.route("/planes/nuevo", methods=["GET", "POST"])
+@login_required
+def nuevo_plan():
+    if not _puede_configurar_finanzas():
+        abort(403)
+    academia_id = _academia_id_or_403()
+    form = {
+        "codigo": request.form.get("codigo") or "",
+        "nombre": request.form.get("nombre") or "",
+        "descripcion": request.form.get("descripcion") or "",
+        "objetivo": request.form.get("objetivo") or "",
+        "orden": request.form.get("orden") or "0",
+    }
+    if request.method == "POST":
+        try:
+            plan = PlanFinanciero(academia_id=academia_id, activo=True)
+            _guardar_catalogo_financiero(plan, {
+                "codigo": _texto_obligatorio("codigo"),
+                "nombre": _texto_obligatorio("nombre"),
+                "descripcion": form["descripcion"].strip() or None,
+                "objetivo": form["objetivo"].strip() or None,
+                "orden": _entero_desde_formulario("orden", default=0),
+            })
+        except FinanzasError as exc:
+            flash(str(exc), "danger")
+        else:
+            flash("Plan financiero creado correctamente.", "success")
+            return redirect(url_for("finanzas.planes"))
+    return render_template("finanzas/plan_form.html", plan=None, form=form)
+
+
+@finanzas_bp.route("/planes/<int:plan_id>/editar", methods=["GET", "POST"])
+@login_required
+def editar_plan(plan_id):
+    if not _puede_configurar_finanzas():
+        abort(403)
+    academia_id = _academia_id_or_403()
+    plan = _plan_financiero_de_academia(academia_id, plan_id)
+    form = {
+        "codigo": request.form.get("codigo", plan.codigo),
+        "nombre": request.form.get("nombre", plan.nombre),
+        "descripcion": request.form.get("descripcion", plan.descripcion or ""),
+        "objetivo": request.form.get("objetivo", plan.objetivo or ""),
+        "orden": request.form.get("orden", str(plan.orden)),
+    }
+    if request.method == "POST":
+        try:
+            _guardar_catalogo_financiero(plan, {
+                "codigo": _texto_obligatorio("codigo"),
+                "nombre": _texto_obligatorio("nombre"),
+                "descripcion": form["descripcion"].strip() or None,
+                "objetivo": form["objetivo"].strip() or None,
+                "orden": _entero_desde_formulario("orden", default=0),
+            })
+        except FinanzasError as exc:
+            flash(str(exc), "danger")
+        else:
+            flash("Plan financiero actualizado correctamente.", "success")
+            return redirect(url_for("finanzas.planes"))
+    return render_template("finanzas/plan_form.html", plan=plan, form=form)
+
+
+@finanzas_bp.route("/planes/<int:plan_id>/alternar-activo", methods=["POST"])
+@login_required
+def alternar_plan_activo(plan_id):
+    if not _puede_configurar_finanzas():
+        abort(403)
+    plan = _plan_financiero_de_academia(_academia_id_or_403(), plan_id)
+    plan.activo = not plan.activo
+    db.session.commit()
+    flash("Plan financiero activado." if plan.activo else "Plan financiero desactivado.", "success")
+    return redirect(url_for("finanzas.planes"))
+
+
+@finanzas_bp.route("/frecuencias")
+@login_required
+def frecuencias():
+    if not _puede_configurar_finanzas():
+        abort(403)
+    academia_id = _academia_id_or_403()
+    frecuencias_actuales = FrecuenciaEntrenamiento.query.filter_by(academia_id=academia_id).order_by(
+        FrecuenciaEntrenamiento.nombre, FrecuenciaEntrenamiento.id
+    ).all()
+    return render_template("finanzas/frecuencias.html", frecuencias=frecuencias_actuales)
+
+
+@finanzas_bp.route("/frecuencias/nueva", methods=["GET", "POST"])
+@login_required
+def nueva_frecuencia():
+    if not _puede_configurar_finanzas():
+        abort(403)
+    academia_id = _academia_id_or_403()
+    form = {
+        "codigo": request.form.get("codigo") or "",
+        "nombre": request.form.get("nombre") or "",
+        "dias_semana": request.form.get("dias_semana") or "",
+        "descripcion": request.form.get("descripcion") or "",
+    }
+    if request.method == "POST":
+        try:
+            frecuencia = FrecuenciaEntrenamiento(academia_id=academia_id, activo=True)
+            _guardar_catalogo_financiero(frecuencia, {
+                "codigo": _texto_obligatorio("codigo"),
+                "nombre": _texto_obligatorio("nombre"),
+                "dias_semana": _entero_desde_formulario("dias_semana", minimo=0),
+                "descripcion": form["descripcion"].strip() or None,
+            })
+        except FinanzasError as exc:
+            flash(str(exc), "danger")
+        else:
+            flash("Frecuencia creada correctamente.", "success")
+            return redirect(url_for("finanzas.frecuencias"))
+    return render_template("finanzas/frecuencia_form.html", frecuencia=None, form=form)
+
+
+@finanzas_bp.route("/frecuencias/<int:frecuencia_id>/editar", methods=["GET", "POST"])
+@login_required
+def editar_frecuencia(frecuencia_id):
+    if not _puede_configurar_finanzas():
+        abort(403)
+    academia_id = _academia_id_or_403()
+    frecuencia = _frecuencia_de_academia(academia_id, frecuencia_id)
+    form = {
+        "codigo": request.form.get("codigo", frecuencia.codigo),
+        "nombre": request.form.get("nombre", frecuencia.nombre),
+        "dias_semana": request.form.get("dias_semana", str(frecuencia.dias_semana)),
+        "descripcion": request.form.get("descripcion", frecuencia.descripcion or ""),
+    }
+    if request.method == "POST":
+        try:
+            _guardar_catalogo_financiero(frecuencia, {
+                "codigo": _texto_obligatorio("codigo"),
+                "nombre": _texto_obligatorio("nombre"),
+                "dias_semana": _entero_desde_formulario("dias_semana", minimo=0),
+                "descripcion": form["descripcion"].strip() or None,
+            })
+        except FinanzasError as exc:
+            flash(str(exc), "danger")
+        else:
+            flash("Frecuencia actualizada correctamente.", "success")
+            return redirect(url_for("finanzas.frecuencias"))
+    return render_template("finanzas/frecuencia_form.html", frecuencia=frecuencia, form=form)
+
+
+@finanzas_bp.route("/frecuencias/<int:frecuencia_id>/alternar-activo", methods=["POST"])
+@login_required
+def alternar_frecuencia_activa(frecuencia_id):
+    if not _puede_configurar_finanzas():
+        abort(403)
+    frecuencia = _frecuencia_de_academia(_academia_id_or_403(), frecuencia_id)
+    frecuencia.activo = not frecuencia.activo
+    db.session.commit()
+    flash("Frecuencia activada." if frecuencia.activo else "Frecuencia desactivada.", "success")
+    return redirect(url_for("finanzas.frecuencias"))
 
 
 @finanzas_bp.route("/cartera")

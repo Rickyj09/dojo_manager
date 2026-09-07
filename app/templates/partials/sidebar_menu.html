@@ -142,6 +142,18 @@
               <i class="bi bi-gear me-2"></i> Política de vencimiento
             </a>
           </li>
+          <li class="nav-item">
+            <a class="nav-link text-white-50 {% if ep.startswith('finanzas.plan') %}active{% endif %}"
+               href="{{ url_for('finanzas.planes') }}">
+              <i class="bi bi-card-list me-2"></i> Planes financieros
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link text-white-50 {% if ep.startswith('finanzas.frecuencia') %}active{% endif %}"
+               href="{{ url_for('finanzas.frecuencias') }}">
+              <i class="bi bi-calendar-week me-2"></i> Frecuencias
+            </a>
+          </li>
           {% endif %}
         </ul>
       </div>

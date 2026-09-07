@@ -1,0 +1,17 @@
+{% extends "base_admin.html" %}
+{% block title %}Planes financieros{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div><h3 class="mb-1">Planes financieros</h3><p class="text-muted mb-0">Catálogo de planes de esta academia.</p></div>
+  <a class="btn btn-primary" href="{{ url_for('finanzas.nuevo_plan') }}"><i class="bi bi-plus-circle"></i> Nuevo plan</a>
+</div>
+<div class="card shadow-sm"><div class="card-body table-responsive"><table class="table table-striped align-middle">
+  <thead class="table-dark"><tr><th>Código</th><th>Nombre</th><th>Objetivo</th><th>Orden</th><th>Estado</th><th></th></tr></thead>
+  <tbody>{% for plan in planes %}<tr>
+    <td>{{ plan.codigo }}</td><td>{{ plan.nombre }}</td><td>{{ plan.objetivo or "-" }}</td><td>{{ plan.orden }}</td>
+    <td><span class="badge {{ 'bg-success' if plan.activo else 'bg-secondary' }}">{{ 'ACTIVO' if plan.activo else 'INACTIVO' }}</span></td>
+    <td class="text-end"><a class="btn btn-outline-primary btn-sm" href="{{ url_for('finanzas.editar_plan', plan_id=plan.id) }}">Editar</a>
+      <form class="d-inline" method="post" action="{{ url_for('finanzas.alternar_plan_activo', plan_id=plan.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-outline-secondary btn-sm">{{ 'Desactivar' if plan.activo else 'Activar' }}</button></form></td>
+  </tr>{% else %}<tr><td colspan="6" class="text-center text-muted">No hay planes financieros configurados.</td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endblock %}
