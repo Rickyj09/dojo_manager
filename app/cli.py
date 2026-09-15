@@ -1,4 +1,6 @@
 # app/cli.py
+import os
+
 import click
 from flask.cli import with_appcontext
 
@@ -12,6 +14,10 @@ from app.models.role import Role
 from app.models.categoria import Categoria
 from app.models.categoriascompetencia import CategoriaCompetencia
 from app.services.finanzas import FinanzasError, generar_obligaciones_mensuales, parsear_periodo
+
+
+ACADEMIA_ADMIN_OBJETIVO = "Borjas Lions"
+PASSWORD_ENV_ADMIN_ACADEMIA = "DOJOMANAGER_NEW_USER_PASSWORD"
 
 
 @click.command("seed-karate-categorias")
@@ -68,6 +74,87 @@ def seed_academia(academia, ciudad, sucursal, direccion, username, email, passwo
     click.echo(f"✅ OK: academia={a.id}, sucursal={s.id}, admin={u.id} ({u.username})")
 
 
+def _mostrar_resultado_usuario(usuario: User, creado: bool) -> None:
+    """Imprime el resultado del alta sin revelar información sensible."""
+    academia = usuario.academia
+    roles = ", ".join(sorted(rol.name for rol in usuario.roles)) or "SIN ROL"
+    click.echo(f"username: {usuario.username}")
+    click.echo(f"user id: {usuario.id}")
+    click.echo(f"academia_id: {usuario.academia_id}")
+    click.echo(f"academia: {academia.nombre if academia else 'SIN ACADEMIA'}")
+    click.echo(f"rol: {roles}")
+    click.echo(f"estado: {'activo' if usuario.is_active else 'inactivo'}")
+    click.echo(f"resultado: {'creado' if creado else 'ya existía'}")
+
+
+@click.command("crear-admin-academia")
+@click.option("--academia", "academia_nombre", required=True)
+@click.option("--username", required=True)
+@click.option("--email", required=True)
+@with_appcontext
+def crear_admin_academia(academia_nombre: str, username: str, email: str):
+    """Crea de forma idempotente un ADMIN para una academia ya existente."""
+    username = username.strip()
+    email = email.strip()
+    academia_nombre = academia_nombre.strip()
+
+    if academia_nombre != ACADEMIA_ADMIN_OBJETIVO:
+        raise click.ClickException(
+            f"Este comando solo permite la academia '{ACADEMIA_ADMIN_OBJETIVO}'. "
+            "No se realizó ningún cambio."
+        )
+
+    usuario = User.query.filter_by(username=username).first()
+    if usuario:
+        _mostrar_resultado_usuario(usuario, creado=False)
+        return
+
+    academia = Academia.query.filter_by(nombre=academia_nombre).first()
+    if not academia:
+        raise click.ClickException(
+            f"No existe la academia '{academia_nombre}'. No se realizó ningún cambio."
+        )
+
+    rol_admin = Role.query.filter_by(name="ADMIN").first()
+    if not rol_admin:
+        raise click.ClickException(
+            "No existe el rol ADMIN. No se realizó ningún cambio."
+        )
+
+    usuario_con_email = User.query.filter_by(email=email).first()
+    if usuario_con_email:
+        raise click.ClickException(
+            f"El email '{email}' ya pertenece al usuario "
+            f"'{usuario_con_email.username}'. No se realizó ningún cambio."
+        )
+
+    password = os.environ.get(PASSWORD_ENV_ADMIN_ACADEMIA)
+    if not password:
+        raise click.ClickException(
+            f"La variable de entorno {PASSWORD_ENV_ADMIN_ACADEMIA} no está definida "
+            "o está vacía. "
+            "No se realizó ningún cambio."
+        )
+
+    usuario = User(
+        username=username,
+        email=email,
+        is_active=True,
+        academia_id=academia.id,
+    )
+    usuario.set_password(password)
+    usuario.roles.append(rol_admin)
+    db.session.add(usuario)
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+
+    _mostrar_resultado_usuario(usuario, creado=True)
+
+
 @click.group("finanzas")
 def finanzas_cli():
     """Comandos financieros."""
@@ -100,4 +187,5 @@ def generar_pensiones(academia_id: int, periodo: str):
 def register_cli(app):
     app.cli.add_command(seed_karate_categorias)
     app.cli.add_command(seed_academia)
+    app.cli.add_command(crear_admin_academia)
     app.cli.add_command(finanzas_cli)
