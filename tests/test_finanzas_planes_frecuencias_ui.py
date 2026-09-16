@@ -175,5 +175,5 @@ def test_navegacion_muestra_solo_catalogos_implementados(app, db, base_data):
 
     assert b"Planes financieros" in response.data
     assert b"Frecuencias" in response.data
-    assert b"Tarifarios" not in response.data
+    assert b"Tarifarios" in response.data
     assert b"Descuentos" not in response.data

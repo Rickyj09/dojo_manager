@@ -1,0 +1,28 @@
+{% extends "base_admin.html" %}
+{% block title %}Tarifas · {{ tarifario.nombre }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div><h3 class="mb-1">Tarifario: {{ tarifario.nombre }}</h3><p class="text-muted mb-0">{{ tarifario.moneda }} · {{ tarifario.fecha_inicio_vigencia.strftime('%d/%m/%Y') }} — {{ tarifario.fecha_fin_vigencia.strftime('%d/%m/%Y') if tarifario.fecha_fin_vigencia else 'Sin fin' }} · <strong>{{ tarifario.estado }}</strong></p></div>
+  <div class="d-flex gap-2"><a class="btn btn-outline-secondary" href="{{ url_for('finanzas.tarifarios') }}">Tarifarios</a>{% if tarifario.estado != 'CERRADO' %}<a class="btn btn-outline-primary" href="{{ url_for('finanzas.tarifario_editar', tarifario_id=tarifario.id) }}">Editar / estado</a>{% endif %}</div>
+</div>
+{% if tarifario.descripcion %}<p>{{ tarifario.descripcion }}</p>{% endif %}
+{% if not editable %}<div class="alert alert-secondary">Tarifario cerrado o vencido: tarifas en solo consulta.</div>
+{% elif tarifario.estado == 'BORRADOR' %}<div class="alert alert-info">Puede preparar las tarifas. Para utilizarlas, cambie el tarifario a VIGENTE y respete sus fechas.</div>{% endif %}
+{% if editable %}<a class="btn btn-primary mb-3" href="{{ url_for('finanzas.tarifario_tarifa_nueva', tarifario_id=tarifario.id) }}"><i class="bi bi-plus-circle"></i> Nueva tarifa</a>{% endif %}
+<div class="card shadow-sm"><div class="card-body table-responsive">
+  <table class="table table-striped align-middle">
+    <thead class="table-dark"><tr><th>Plan</th><th>Frecuencia</th><th>Importe</th><th>Estado</th><th>Observaciones</th><th>Acciones</th></tr></thead>
+    <tbody>{% for tarifa in tarifas %}
+      <tr><td>{{ tarifa.plan.nombre }}{% if not tarifa.plan.activo %} <span class="badge bg-secondary">Plan inactivo</span>{% endif %}</td>
+        <td>{{ tarifa.frecuencia.nombre }}{% if not tarifa.frecuencia.activo %} <span class="badge bg-secondary">Frecuencia inactiva</span>{% endif %}</td>
+        <td class="text-nowrap">{{ tarifario.moneda }} {{ '%.2f'|format(tarifa.valor_base) }}</td>
+        <td><span class="badge {{ 'bg-success' if tarifa.activo else 'bg-secondary' }}">{{ 'Activa' if tarifa.activo else 'Inactiva' }}</span></td>
+        <td>{{ tarifa.observaciones or '—' }}</td><td class="text-end text-nowrap">{% if editable %}
+          <a class="btn btn-outline-primary btn-sm" href="{{ url_for('finanzas.tarifario_tarifa_editar', tarifario_id=tarifario.id, tarifa_id=tarifa.id) }}">Editar</a>
+          <form class="d-inline" method="post" action="{{ url_for('finanzas.tarifario_tarifa_alternar', tarifario_id=tarifario.id, tarifa_id=tarifa.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-outline-secondary btn-sm" type="submit">{{ 'Desactivar' if tarifa.activo else 'Activar' }}</button></form>
+        {% endif %}</td></tr>
+    {% else %}<tr><td colspan="6" class="text-center text-muted">No hay tarifas configuradas.</td></tr>{% endfor %}</tbody>
+  </table>
+</div></div>
+<p class="text-muted small mt-3">Los cambios de precio se usan en nuevas asignaciones. Las asignaciones y obligaciones existentes conservan sus importes históricos.</p>
+{% endblock %}

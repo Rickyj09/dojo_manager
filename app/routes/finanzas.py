@@ -6,7 +6,7 @@ from werkzeug.exceptions import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from app.models.alumno import Alumno
-from app.models.finanzas import FrecuenciaEntrenamiento, PlanFinanciero
+from app.models.finanzas import FrecuenciaEntrenamiento, PlanFinanciero, TarifaPlan, Tarifario
 from app.extensions import db
 from app.services.finanzas import (
     MEDIOS_PAGO_FINANCIERO,
@@ -27,6 +27,9 @@ from app.services.finanzas import (
     resolver_ruta_comprobante,
 )
 from app.services.finanzas.familias import FinanzasError
+from app.services.finanzas.tarifarios import (
+    ESTADOS_TARIFARIO, alternar_tarifa, guardar_tarifa, guardar_tarifario, tarifas_editables,
+)
 
 
 finanzas_bp = Blueprint("finanzas", __name__, url_prefix="/finanzas")
@@ -140,6 +143,135 @@ def _guardar_catalogo_financiero(catalogo, campos: dict):
         if isinstance(exc, IntegrityError):
             raise FinanzasError("Ya existe un registro con ese codigo en la academia") from exc
         raise FinanzasError(str(exc)) from exc
+
+
+def _academia_administracion_financiera():
+    if not _puede_configurar_finanzas():
+        abort(403)
+    return _academia_id_or_403()
+
+
+def _tarifario_de_academia(academia_id, tarifario_id):
+    return Tarifario.query.filter_by(id=tarifario_id, academia_id=academia_id).first_or_404()
+
+
+def _tarifa_de_tarifario(academia_id, tarifario_id, tarifa_id):
+    return TarifaPlan.query.filter_by(
+        id=tarifa_id, academia_id=academia_id, tarifario_id=tarifario_id,
+    ).first_or_404()
+
+
+@finanzas_bp.route("/tarifarios")
+@login_required
+def tarifarios():
+    academia_id = _academia_administracion_financiera()
+    items = Tarifario.query.filter_by(academia_id=academia_id).order_by(
+        Tarifario.fecha_inicio_vigencia.desc(), Tarifario.id.desc(),
+    ).all()
+    return render_template("finanzas/tarifarios.html", tarifarios=items)
+
+
+def _formulario_tarifario(academia_id, tarifario=None):
+    campos = ("nombre", "descripcion", "moneda", "fecha_inicio_vigencia", "fecha_fin_vigencia", "estado")
+    if request.method == "POST":
+        form = {campo: request.form.get(campo, "") for campo in campos}
+        try:
+            guardado = guardar_tarifario(
+                academia_id=academia_id, usuario_id=current_user.id, datos=form, tarifario=tarifario,
+            )
+            db.session.commit()
+        except (FinanzasError, IntegrityError) as exc:
+            db.session.rollback()
+            flash(str(exc) if isinstance(exc, FinanzasError) else "No se pudo guardar el tarifario. Revise los datos.", "danger")
+        else:
+            flash("Tarifario guardado correctamente.", "success")
+            return redirect(url_for("finanzas.tarifario_tarifas", tarifario_id=guardado.id))
+    else:
+        form = {campo: getattr(tarifario, campo, None) or "" for campo in campos}
+        if tarifario is None:
+            form.update(moneda="USD", estado="BORRADOR", fecha_inicio_vigencia=date.today().isoformat())
+    return render_template("finanzas/tarifario_form.html", tarifario=tarifario, form=form, estados=ESTADOS_TARIFARIO)
+
+
+@finanzas_bp.route("/tarifarios/nuevo", methods=["GET", "POST"])
+@login_required
+def tarifario_nuevo():
+    return _formulario_tarifario(_academia_administracion_financiera())
+
+
+@finanzas_bp.route("/tarifarios/<int:tarifario_id>/editar", methods=["GET", "POST"])
+@login_required
+def tarifario_editar(tarifario_id):
+    academia_id = _academia_administracion_financiera()
+    return _formulario_tarifario(academia_id, _tarifario_de_academia(academia_id, tarifario_id))
+
+
+@finanzas_bp.route("/tarifarios/<int:tarifario_id>/tarifas")
+@login_required
+def tarifario_tarifas(tarifario_id):
+    academia_id = _academia_administracion_financiera()
+    tarifario = _tarifario_de_academia(academia_id, tarifario_id)
+    tarifas = TarifaPlan.query.filter_by(academia_id=academia_id, tarifario_id=tarifario.id).order_by(TarifaPlan.id).all()
+    return render_template(
+        "finanzas/tarifas.html", tarifario=tarifario, tarifas=tarifas, editable=tarifas_editables(tarifario),
+    )
+
+
+def _formulario_tarifa(academia_id, tarifario, tarifa=None):
+    campos = ("plan_id", "frecuencia_id", "valor_base", "observaciones", "activo")
+    if request.method == "POST":
+        form = {campo: request.form.get(campo, "") for campo in campos}
+        try:
+            guardar_tarifa(academia_id=academia_id, tarifario=tarifario, tarifa=tarifa, datos=form)
+            db.session.commit()
+        except (FinanzasError, IntegrityError) as exc:
+            db.session.rollback()
+            flash(str(exc) if isinstance(exc, FinanzasError) else "Ya existe una tarifa para ese plan y frecuencia.", "danger")
+        else:
+            flash("Tarifa guardada correctamente.", "success")
+            return redirect(url_for("finanzas.tarifario_tarifas", tarifario_id=tarifario.id))
+    else:
+        form = {campo: getattr(tarifa, campo, None) if tarifa else "" for campo in campos}
+        form["activo"] = "1" if tarifa is None or tarifa.activo else ""
+    planes = PlanFinanciero.query.filter_by(academia_id=academia_id, activo=True).order_by(PlanFinanciero.orden, PlanFinanciero.nombre).all()
+    frecuencias = FrecuenciaEntrenamiento.query.filter_by(academia_id=academia_id, activo=True).order_by(FrecuenciaEntrenamiento.nombre).all()
+    return render_template(
+        "finanzas/tarifa_form.html", tarifario=tarifario, tarifa=tarifa, form=form,
+        planes=planes, frecuencias=frecuencias, editable=tarifas_editables(tarifario),
+    )
+
+
+@finanzas_bp.route("/tarifarios/<int:tarifario_id>/tarifas/nueva", methods=["GET", "POST"])
+@login_required
+def tarifario_tarifa_nueva(tarifario_id):
+    academia_id = _academia_administracion_financiera()
+    return _formulario_tarifa(academia_id, _tarifario_de_academia(academia_id, tarifario_id))
+
+
+@finanzas_bp.route("/tarifarios/<int:tarifario_id>/tarifas/<int:tarifa_id>/editar", methods=["GET", "POST"])
+@login_required
+def tarifario_tarifa_editar(tarifario_id, tarifa_id):
+    academia_id = _academia_administracion_financiera()
+    tarifario = _tarifario_de_academia(academia_id, tarifario_id)
+    tarifa = _tarifa_de_tarifario(academia_id, tarifario.id, tarifa_id)
+    return _formulario_tarifa(academia_id, tarifario, tarifa)
+
+
+@finanzas_bp.route("/tarifarios/<int:tarifario_id>/tarifas/<int:tarifa_id>/alternar-activo", methods=["POST"])
+@login_required
+def tarifario_tarifa_alternar(tarifario_id, tarifa_id):
+    academia_id = _academia_administracion_financiera()
+    tarifario = _tarifario_de_academia(academia_id, tarifario_id)
+    tarifa = _tarifa_de_tarifario(academia_id, tarifario.id, tarifa_id)
+    try:
+        alternar_tarifa(academia_id=academia_id, tarifario=tarifario, tarifa=tarifa)
+        db.session.commit()
+    except FinanzasError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+    else:
+        flash("Tarifa activada." if tarifa.activo else "Tarifa desactivada.", "success")
+    return redirect(url_for("finanzas.tarifario_tarifas", tarifario_id=tarifario.id))
 
 
 @finanzas_bp.route("/planes")

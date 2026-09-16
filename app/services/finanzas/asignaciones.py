@@ -20,6 +20,7 @@ from app.services.finanzas.familias import (
     obtener_familia_activa_del_alumno,
 )
 from app.services.finanzas.tarifas import calcular_tarifa
+from app.services.finanzas.tarifarios import validar_referencias_activas, validar_tarifario_utilizable
 
 
 def resolver_tarifario_vigente(*, academia_id: int, fecha: date) -> Tarifario:
@@ -97,6 +98,9 @@ def asignar_plan_financiero(
             academia_id,
             "Tarifario no pertenece a la academia indicada",
         )
+
+    validar_referencias_activas(academia_id=academia_id, plan_id=plan.id, frecuencia_id=frecuencia.id)
+    validar_tarifario_utilizable(tarifario, academia_id=academia_id, fecha=fecha_inicio)
 
     if tarifa_plan_id is None:
         tarifa = (

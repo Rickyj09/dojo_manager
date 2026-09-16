@@ -1,7 +1,9 @@
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
 from app.models.finanzas import ReglaDescuento, TarifaPlan
+from app.services.finanzas.tarifarios import validar_referencias_activas, validar_tarifario_utilizable
 
 
 CENTAVO = Decimal("0.01")
@@ -69,6 +71,12 @@ def calcular_tarifa(
     )
     if tarifa is None:
         raise ValueError("No existe una tarifa activa para la combinacion indicada")
+
+    validar_referencias_activas(academia_id=academia_id, plan_id=plan_id, frecuencia_id=frecuencia_id)
+    validar_tarifario_utilizable(
+        tarifa.tarifario, academia_id=academia_id,
+        fecha=contexto_descuentos.get("fecha") or date.today(),
+    )
 
     valor_base = redondear_dinero(tarifa.valor_base)
     valor_actual = valor_base

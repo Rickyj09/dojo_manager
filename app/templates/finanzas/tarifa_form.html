@@ -1,0 +1,19 @@
+{% extends "base_admin.html" %}
+{% block title %}{{ 'Editar' if tarifa else 'Nueva' }} tarifa{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4"><div><h3>{{ 'Editar' if tarifa else 'Nueva' }} tarifa</h3><p class="text-muted">{{ tarifario.nombre }} · {{ tarifario.moneda }} · {{ tarifario.estado }}</p></div><a class="btn btn-outline-secondary" href="{{ url_for('finanzas.tarifario_tarifas', tarifario_id=tarifario.id) }}">Volver a tarifas</a></div>
+{% if not editable %}<div class="alert alert-secondary">El tarifario está cerrado o vencido. No admite cambios.</div>{% endif %}
+{% if not planes or not frecuencias %}<div class="alert alert-warning">Para guardar una tarifa necesita <a href="{{ url_for('finanzas.planes') }}">planes</a> y <a href="{{ url_for('finanzas.frecuencias') }}">frecuencias</a> activos.</div>{% endif %}
+{% if tarifa and (not tarifa.plan.activo or not tarifa.frecuencia.activo) %}<div class="alert alert-warning">La referencia actual está inactiva. Reactive el catálogo para conservarla; una tarifa utilizada no puede cambiar de plan ni frecuencia.</div>{% endif %}
+<div class="card shadow-sm"><div class="card-body"><form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <fieldset class="row g-3" {% if not editable %}disabled{% endif %}>
+    <div class="col-md-6"><label class="form-label" for="plan_id">Plan financiero</label><select id="plan_id" class="form-select" name="plan_id" required><option value="">Seleccione un plan</option>{% for plan in planes %}<option value="{{ plan.id }}" {% if form.plan_id|string == plan.id|string %}selected{% endif %}>{{ plan.nombre }}</option>{% endfor %}</select></div>
+    <div class="col-md-6"><label class="form-label" for="frecuencia_id">Frecuencia</label><select id="frecuencia_id" class="form-select" name="frecuencia_id" required><option value="">Seleccione una frecuencia</option>{% for frecuencia in frecuencias %}<option value="{{ frecuencia.id }}" {% if form.frecuencia_id|string == frecuencia.id|string %}selected{% endif %}>{{ frecuencia.nombre }} ({{ frecuencia.dias_semana }} días/semana)</option>{% endfor %}</select></div>
+    <div class="col-md-6"><label class="form-label" for="valor_base">Importe ({{ tarifario.moneda }})</label><input id="valor_base" class="form-control" type="number" name="valor_base" min="0" max="99999999.99" step="0.01" value="{{ form.valor_base }}" required></div>
+    <div class="col-md-6 d-flex align-items-end"><div class="form-check mb-2"><input id="activo" class="form-check-input" type="checkbox" name="activo" value="1" {% if form.activo == '1' %}checked{% endif %}><label class="form-check-label" for="activo">Activa</label></div></div>
+    <div class="col-12"><label class="form-label" for="observaciones">Observaciones</label><textarea id="observaciones" class="form-control" name="observaciones" rows="3">{{ form.observaciones or '' }}</textarea></div>
+    <div class="col-12"><p class="text-muted small">Una combinación de plan y frecuencia tiene una sola tarifa por tarifario, incluso si está inactiva. Los cambios no recalculan importes históricos.</p><button class="btn btn-primary" type="submit" {% if not planes or not frecuencias %}disabled{% endif %}>Guardar</button></div>
+  </fieldset>
+</form></div></div>
+{% endblock %}

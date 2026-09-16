@@ -1,0 +1,28 @@
+{% extends "base_admin.html" %}
+{% block title %}Tarifarios{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div><h3 class="mb-1">Tarifarios</h3><p class="text-muted mb-0">Precios y vigencias de esta academia.</p></div>
+  <a class="btn btn-primary" href="{{ url_for('finanzas.tarifario_nuevo') }}"><i class="bi bi-plus-circle"></i> Nuevo tarifario</a>
+</div>
+<div class="card shadow-sm"><div class="card-body table-responsive">
+  <table class="table table-striped align-middle">
+    <thead class="table-dark"><tr><th>Nombre</th><th>Descripción</th><th>Moneda</th><th>Inicio</th><th>Fin</th><th>Estado</th><th>Creación</th><th>Acciones</th></tr></thead>
+    <tbody>
+      {% for item in tarifarios %}
+      <tr>
+        <td>{{ item.nombre }}</td><td>{{ item.descripcion or '—' }}</td><td>{{ item.moneda }}</td>
+        <td>{{ item.fecha_inicio_vigencia.strftime('%d/%m/%Y') }}</td>
+        <td>{{ item.fecha_fin_vigencia.strftime('%d/%m/%Y') if item.fecha_fin_vigencia else 'Sin fin' }}</td>
+        <td><span class="badge {{ 'bg-success' if item.estado == 'VIGENTE' else 'bg-warning text-dark' if item.estado == 'BORRADOR' else 'bg-secondary' }}">{{ item.estado }}</span></td>
+        <td>{{ item.created_at.strftime('%d/%m/%Y') }}</td>
+        <td class="text-end text-nowrap">
+          <a class="btn btn-outline-primary btn-sm" href="{{ url_for('finanzas.tarifario_tarifas', tarifario_id=item.id) }}">Administrar tarifas</a>
+          {% if item.estado != 'CERRADO' %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('finanzas.tarifario_editar', tarifario_id=item.id) }}">Editar / estado</a>{% endif %}
+        </td>
+      </tr>
+      {% else %}<tr><td colspan="8" class="text-center text-muted">No hay tarifarios configurados.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "base_admin.html" %}
+{% block title %}{{ 'Editar' if tarifario else 'Nuevo' }} tarifario{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <h3>{{ 'Editar' if tarifario else 'Nuevo' }} tarifario</h3>
+  <a class="btn btn-outline-secondary" href="{{ url_for('finanzas.tarifarios') }}">Volver</a>
+</div>
+<div class="alert alert-info">BORRADOR permite preparar precios. VIGENTE permite utilizarlos dentro de sus fechas. CERRADO conserva el historial y queda en solo consulta; no se puede reabrir.</div>
+<div class="card shadow-sm"><div class="card-body">
+  <form method="post" class="row g-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <fieldset class="row g-3 m-0 p-0" {% if tarifario and tarifario.estado == 'CERRADO' %}disabled{% endif %}>
+      <div class="col-md-8"><label class="form-label" for="nombre">Nombre</label><input id="nombre" class="form-control" name="nombre" maxlength="120" value="{{ form.nombre }}" required></div>
+      <div class="col-md-4"><label class="form-label" for="moneda">Moneda</label><input id="moneda" class="form-control" name="moneda" minlength="3" maxlength="3" value="{{ form.moneda }}" required></div>
+      <div class="col-12"><label class="form-label" for="descripcion">Descripción</label><textarea id="descripcion" class="form-control" name="descripcion" rows="2">{{ form.descripcion }}</textarea></div>
+      <div class="col-md-4"><label class="form-label" for="fecha_inicio_vigencia">Fecha inicio</label><input id="fecha_inicio_vigencia" class="form-control" type="date" name="fecha_inicio_vigencia" value="{{ form.fecha_inicio_vigencia }}" required></div>
+      <div class="col-md-4"><label class="form-label" for="fecha_fin_vigencia">Fecha fin (opcional)</label><input id="fecha_fin_vigencia" class="form-control" type="date" name="fecha_fin_vigencia" value="{{ form.fecha_fin_vigencia }}"></div>
+      <div class="col-md-4"><label class="form-label" for="estado">Estado</label><select id="estado" class="form-select" name="estado" required>
+        {% for estado in estados %}{% if not tarifario or tarifario.estado != 'VIGENTE' or estado != 'BORRADOR' %}<option value="{{ estado }}" {% if form.estado == estado %}selected{% endif %}>{{ estado }}</option>{% endif %}{% endfor %}
+      </select></div>
+      <div class="col-12"><p class="text-muted small">Los tarifarios vigentes no pueden solaparse. Las fechas de inicio y fin son inclusivas. Si ya se utilizó el tarifario, se conservan su moneda y fecha de inicio.</p><button class="btn btn-primary" type="submit">Guardar</button></div>
+    </fieldset>
+  </form>
+</div></div>
+{% endblock %}
