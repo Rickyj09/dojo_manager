@@ -21,6 +21,7 @@ from app.services.finanzas.vencimientos import (
     BUCKET_61_90,
     BUCKET_MAS_90,
     BUCKET_SIN_VENCIMIENTO,
+    BUCKET_VENCE_HOY,
     CONDICION_VENCIDA,
     analizar_vencimiento_obligacion,
 )
@@ -45,6 +46,7 @@ class ResumenCartera:
     saldo_61_90: Decimal
     saldo_mas_90: Decimal
     saldo_sin_vencimiento: Decimal
+    saldo_vence_hoy: Decimal
 
 
 @dataclass(frozen=True)
@@ -477,6 +479,7 @@ def obtener_resumen_cartera_academia(
 
     pendientes = parciales = pagadas = vencidas = 0
     buckets = {
+        BUCKET_VENCE_HOY: Decimal("0.00"),
         BUCKET_1_30: Decimal("0.00"),
         BUCKET_31_60: Decimal("0.00"),
         BUCKET_61_90: Decimal("0.00"),
@@ -524,4 +527,5 @@ def obtener_resumen_cartera_academia(
         saldo_61_90=_money(buckets[BUCKET_61_90]),
         saldo_mas_90=_money(buckets[BUCKET_MAS_90]),
         saldo_sin_vencimiento=_money(buckets[BUCKET_SIN_VENCIMIENTO]),
+        saldo_vence_hoy=_money(buckets[BUCKET_VENCE_HOY]),
     )

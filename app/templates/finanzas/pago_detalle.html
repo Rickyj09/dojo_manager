@@ -195,7 +195,7 @@
               <td>{{ item.obligacion.concepto }}</td>
               <td>
                 {{ item.condicion_temporal }}
-                {% if item.dias_atraso %}
+                {% if item.condicion_temporal == "VENCIDA" %}
                   <span class="text-muted small">{{ item.dias_atraso }} días</span>
                 {% endif %}
               </td>

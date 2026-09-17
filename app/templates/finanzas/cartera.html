@@ -98,7 +98,7 @@
             <td>$ {{ "%.2f"|format(fila.total_aplicado) }}</td>
             <td>$ {{ "%.2f"|format(fila.saldo_pendiente) }}</td>
             <td>$ {{ "%.2f"|format(fila.saldo_vencido) }}</td>
-            <td>{{ fila.dias_atraso_max if fila.dias_atraso_max else "-" }}</td>
+            <td>{{ fila.dias_atraso_max if fila.cantidad_obligaciones_vencidas else "-" }}</td>
             <td>$ {{ "%.2f"|format(fila.saldo_pagos_sin_aplicar) }}</td>
             <td>{{ fila.cantidad_obligaciones_pendientes }}</td>
             <td>{{ fila.cantidad_obligaciones_parciales }}</td>

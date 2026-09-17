@@ -91,7 +91,9 @@
                 <span class="text-muted">Sin vencimiento configurado</span>
               {% else %}
                 <div>{{ item.obligacion.fecha_vencimiento.strftime("%d/%m/%Y") }}</div>
-                {% if item.condicion_temporal == "VENCIDA" %}
+                {% if item.estado_derivado in ('PAGADA', 'ANULADA') or item.saldo <= 0 %}
+                  <span class="text-muted">Sin saldo pendiente</span>
+                {% elif item.condicion_temporal == "VENCIDA" %}
                   <span class="badge bg-danger">VENCIDA</span>
                   <small class="text-muted">{{ item.dias_atraso }} días</small>
                 {% else %}

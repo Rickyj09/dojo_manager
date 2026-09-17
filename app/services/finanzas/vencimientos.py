@@ -12,6 +12,7 @@ CONDICION_VENCIDA = "VENCIDA"
 
 BUCKET_SIN_VENCIMIENTO = "SIN_VENCIMIENTO"
 BUCKET_NO_VENCIDA = "NO_VENCIDA"
+BUCKET_VENCE_HOY = "VENCE_HOY"
 BUCKET_1_30 = "1_30"
 BUCKET_31_60 = "31_60"
 BUCKET_61_90 = "61_90"
@@ -61,9 +62,10 @@ def analizar_vencimiento_obligacion(
     if fecha_vencimiento is None:
         return AnalisisVencimiento(CONDICION_SIN_VENCIMIENTO, 0, BUCKET_SIN_VENCIMIENTO)
 
-    if estado_financiero == "ANULADA" or saldo <= 0 or fecha_referencia <= fecha_vencimiento:
+    if estado_financiero in ("ANULADA", "PAGADA") or saldo <= 0 or fecha_referencia < fecha_vencimiento:
         return AnalisisVencimiento(CONDICION_VIGENTE, 0, BUCKET_NO_VENCIDA)
 
+    # Vencida desde la fecha límite, con cero días transcurridos ese día.
     dias_atraso = (fecha_referencia - fecha_vencimiento).days
     return AnalisisVencimiento(
         condicion=CONDICION_VENCIDA,
@@ -73,8 +75,10 @@ def analizar_vencimiento_obligacion(
 
 
 def clasificar_antiguedad_cartera(dias_atraso: int) -> str:
-    if dias_atraso <= 0:
+    if dias_atraso < 0:
         return BUCKET_NO_VENCIDA
+    if dias_atraso == 0:
+        return BUCKET_VENCE_HOY
     if dias_atraso <= 30:
         return BUCKET_1_30
     if dias_atraso <= 60:

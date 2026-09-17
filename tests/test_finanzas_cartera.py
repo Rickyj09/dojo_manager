@@ -410,7 +410,7 @@ def test_obligacion_antes_del_vencimiento_es_vigente(db, base_data):
     assert estado.obligaciones[0].dias_atraso == 0
 
 
-def test_obligacion_mismo_dia_del_vencimiento_es_vigente(db, base_data):
+def test_obligacion_mismo_dia_del_vencimiento_es_vencida_sin_dias_atraso(db, base_data):
     obligacion = crear_plan_y_obligacion(db, base_data, valor="60.00")
     fijar_vencimiento(db, obligacion, date(2026, 9, 10))
 
@@ -420,7 +420,8 @@ def test_obligacion_mismo_dia_del_vencimiento_es_vigente(db, base_data):
         fecha_referencia=date(2026, 9, 10),
     )
 
-    assert estado.obligaciones[0].condicion_temporal == CONDICION_VIGENTE
+    assert estado.obligaciones[0].condicion_temporal == CONDICION_VENCIDA
+    assert estado.obligaciones[0].dias_atraso == 0
 
 
 def test_obligacion_un_dia_despues_es_vencida_y_calcula_atraso(db, base_data):
