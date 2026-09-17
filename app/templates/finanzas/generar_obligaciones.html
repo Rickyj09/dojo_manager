@@ -1,0 +1,48 @@
+{% extends "base_admin.html" %}
+{% block title %}Generar obligaciones{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+  <div><h3>Generar obligaciones</h3><p class="text-muted mb-0">Pensiones de la academia actual, según la configuración financiera de cada alumno.</p></div>
+  <a class="btn btn-outline-secondary align-self-start" href="{{ url_for('finanzas.cartera') }}">Ver cartera</a>
+</div>
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<div class="card mb-4"><div class="card-body">
+  <form method="post" class="row g-3 align-items-end">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="col-md-4"><label class="form-label" for="periodo">Período</label><input class="form-control" type="month" name="periodo" id="periodo" value="{{ periodo }}" min="0001-01" max="9999-12" required></div>
+    <div class="col-md-4"><label class="form-label" for="concepto">Concepto</label><input class="form-control" id="concepto" value="PENSIÓN" readonly></div>
+    <div class="col-md-4"><button class="btn btn-outline-primary" name="accion" value="previsualizar">Vista previa</button></div>
+  </form>
+</div></div>
+{% if resumen %}
+<div class="card mb-4"><div class="card-body">
+  <h4>{{ 'Generación completada' if generado else 'Vista previa de pensiones' }}</h4>
+  <p>Período: <strong>{{ resumen.periodo }}</strong></p>
+  <dl class="row mb-3">
+    <dt class="col-sm-8">Alumnos activos</dt><dd class="col-sm-4" id="evaluados">{{ resumen.evaluados }}</dd>
+    <dt class="col-sm-8">Con asignación financiera válida para el período</dt><dd class="col-sm-4" id="con-plan">{{ resumen.con_plan }}</dd>
+    <dt class="col-sm-8">Ya existentes</dt><dd class="col-sm-4" id="existentes">{{ resumen.existentes }}</dd>
+    <dt class="col-sm-8">Omitidos sin configuración válida</dt><dd class="col-sm-4" id="omitidos">{{ resumen.sin_plan }}</dd>
+    <dt class="col-sm-8">Nuevas obligaciones</dt><dd class="col-sm-4" id="nuevas">{{ resumen.creados }}</dd>
+    <dt class="col-sm-8">{{ 'Total generado' if generado else 'Total nuevas obligaciones' }}</dt><dd class="col-sm-4" id="total">{% for moneda, total in resumen.totales.items() %}<div>{{ moneda }} {{ '%.2f'|format(total) }}</div>{% else %}Sin nuevas obligaciones{% endfor %}</dd>
+    <dt class="col-sm-8">Fecha de vencimiento</dt><dd class="col-sm-4">{{ resumen.fecha_vencimiento.strftime('%d/%m/%Y') if resumen.fecha_vencimiento else 'Sin vencimiento configurado' }}</dd>
+  </dl>
+  {% if not resumen.evaluados %}<div class="alert alert-info">No hay alumnos elegibles para generar pensiones en este período.</div>
+  {% elif not resumen.creados and resumen.existentes and not resumen.sin_plan %}<div class="alert alert-info">Las obligaciones del período {{ periodo }} ya habían sido generadas.</div>{% endif %}
+  {% if generado and resumen.creados %}<div class="alert alert-success" role="status">{{ resumen.creados }} {{ 'obligación generada correctamente.' if resumen.creados == 1 else 'obligaciones generadas correctamente.' }}</div>{% endif %}
+  {% if resumen.sin_plan %}
+  <div class="alert alert-warning">{% if resumen.sin_plan == 1 %}1 alumno {{ 'fue omitido' if generado else 'será omitido' }} porque no posee{% else %}{{ resumen.sin_plan }} alumnos {{ 'fueron omitidos' if generado else 'serán omitidos' }} porque no poseen{% endif %} una configuración financiera válida para este período.</div>
+  <details><summary>Ver alumnos omitidos</summary><ul class="mt-2">{% for alumno in resumen.omitidos %}<li><a href="{{ url_for('finanzas.configuracion_alumno', alumno_id=alumno.alumno_id) }}">{{ alumno.nombre }}</a></li>{% endfor %}</ul></details>
+  {% endif %}
+  {% if not generado and resumen.creados and not resumen.errores %}
+  <p class="text-muted mt-3">Al confirmar se volverá a verificar la configuración. Las obligaciones existentes conservarán sus importes.</p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="periodo" value="{{ resumen.periodo }}">
+    <input type="hidden" name="vista_previa" value="{{ token }}">
+    <button class="btn btn-primary" name="accion" value="generar">Generar obligaciones de {{ resumen.periodo }}</button>
+  </form>
+  {% endif %}
+</div></div>
+{% endif %}
+{% endblock %}

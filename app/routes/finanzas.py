@@ -1,6 +1,7 @@
 from datetime import date
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
+from itsdangerous import URLSafeTimedSerializer, BadSignature
 from flask_login import current_user, login_required
 from werkzeug.exceptions import HTTPException
 from sqlalchemy.exc import IntegrityError
@@ -29,6 +30,9 @@ from app.services.finanzas import (
     resolver_ruta_comprobante,
 )
 from app.services.finanzas.familias import FinanzasError
+from app.services.finanzas.obligaciones import (
+    generar_obligaciones_mensuales, previsualizar_obligaciones_mensuales, parsear_periodo,
+)
 from app.services.finanzas.asignaciones import asignar_plan_financiero, resolver_tarifa_asignacion
 from app.services.finanzas.tarifas import calcular_tarifa
 from app.services.finanzas.tarifarios import (
@@ -163,6 +167,55 @@ def _tarifa_de_tarifario(academia_id, tarifario_id, tarifa_id):
     return TarifaPlan.query.filter_by(
         id=tarifa_id, academia_id=academia_id, tarifario_id=tarifario_id,
     ).first_or_404()
+
+
+@finanzas_bp.route("/generar-obligaciones", methods=["GET", "POST"])
+@login_required
+def generar_obligaciones():
+    academia_id = _academia_administracion_financiera()
+    periodo = request.form.get("periodo", date.today().strftime("%Y-%m"))
+    resumen = None
+    token = None
+    generado = False
+    error = None
+    status = 200
+    firma = URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="generacion-pensiones")
+    if request.method == "POST":
+        try:
+            periodo, _ = parsear_periodo(periodo)
+            if request.form.get("concepto", "PENSION") != "PENSION":
+                raise FinanzasError("Solo se permite generar pensiones.")
+            accion = request.form.get("accion")
+            contexto = [academia_id, current_user.id, periodo]
+            if accion == "previsualizar":
+                resumen = previsualizar_obligaciones_mensuales(academia_id=academia_id, periodo=periodo)
+                if resumen.errores:
+                    raise RuntimeError("No se pudo evaluar la vista previa")
+                token = firma.dumps(contexto)
+            elif accion == "generar":
+                try:
+                    confirmado = firma.loads(request.form.get("vista_previa", ""), max_age=1800)
+                except BadSignature:
+                    raise FinanzasError("Realice nuevamente la vista previa antes de generar.")
+                if confirmado != contexto:
+                    raise FinanzasError("Realice la vista previa del período seleccionado antes de generar.")
+                resumen = generar_obligaciones_mensuales(academia_id=academia_id, periodo=periodo)
+                if resumen.errores:
+                    raise RuntimeError("La generación encontró errores; se revierte el lote")
+                db.session.commit()
+                generado = True
+            else:
+                raise FinanzasError("Seleccione Vista previa antes de generar.")
+        except FinanzasError as exc:
+            db.session.rollback()
+            error, status = str(exc), 400
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Error en generación de pensiones")
+            resumen = None
+            error, status = "No se pudo completar la operación. No se guardaron obligaciones. Vuelva a intentarlo.", 500
+    return render_template("finanzas/generar_obligaciones.html", periodo=periodo,
+                           resumen=resumen, token=token, generado=generado, error=error), status
 
 
 @finanzas_bp.route("/asignaciones")
