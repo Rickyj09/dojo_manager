@@ -1,0 +1,21 @@
+{% if ver_finanzas %}
+<section class="card shadow-sm mb-4" aria-labelledby="configuracion-financiera">
+  <div class="card-body">
+    <h4 id="configuracion-financiera">Configuración financiera</h4>
+    {% if asignacion_financiera %}
+    <dl class="row mb-2">
+      <dt class="col-sm-4">Plan financiero</dt><dd class="col-sm-8">{{ asignacion_financiera.plan.nombre }}</dd>
+      <dt class="col-sm-4">Frecuencia</dt><dd class="col-sm-8">{{ asignacion_financiera.frecuencia.nombre }}</dd>
+      <dt class="col-sm-4">Tarifario</dt><dd class="col-sm-8">{{ asignacion_financiera.tarifario.nombre }}</dd>
+      <dt class="col-sm-4">Tarifa / importe base</dt><dd class="col-sm-8">{{ asignacion_financiera.moneda_snapshot }} {{ '%.2f'|format(asignacion_financiera.tarifa_base_snapshot) }}</dd>
+      <dt class="col-sm-4">Fecha de inicio</dt><dd class="col-sm-8">{{ asignacion_financiera.fecha_inicio.strftime('%d/%m/%Y') }}</dd>
+      <dt class="col-sm-4">Estado</dt><dd class="col-sm-8"><span class="badge bg-success">ACTIVA</span></dd>
+    </dl>
+    {% else %}<p>Este alumno todavía no tiene configuración financiera.</p>{% endif %}
+    <div class="d-flex flex-wrap gap-2">
+      {% if puede_escribir_finanzas %}<a class="btn btn-primary" href="{{ url_for('finanzas.configuracion_alumno', alumno_id=alumno.id) }}">{{ 'Editar configuración' if asignacion_financiera else 'Asignar plan financiero' }}</a>{% endif %}
+      <a class="btn btn-outline-primary" href="{{ url_for('finanzas.estado_cuenta_alumno', alumno_id=alumno.id) }}">Estado de cuenta</a>
+    </div>
+  </div>
+</section>
+{% endif %}

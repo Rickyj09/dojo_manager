@@ -1,0 +1,19 @@
+{% extends "base_admin.html" %}
+{% block title %}Asignaciones financieras{% endblock %}
+{% block content %}
+<h3>Asignaciones financieras</h3>
+<p class="text-muted">Configuración financiera por alumno.</p>
+<form method="get" class="d-flex flex-wrap gap-2 align-items-center mb-4">
+  <label for="estado">Mostrar</label><select class="form-select w-auto" id="estado" name="estado">{% for valor, etiqueta in [('todos', 'Todos'), ('con', 'Con asignación activa'), ('sin', 'Sin configuración')] %}<option value="{{ valor }}" {% if filtro == valor %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}</select><button class="btn btn-outline-primary">Filtrar</button>
+</form>
+<div class="table-responsive"><table class="table table-striped align-middle">
+  <thead><tr><th>Alumno</th><th>Plan</th><th>Frecuencia</th><th>Tarifa / importe base</th><th>Fecha de inicio</th><th>Estado</th><th>Acciones</th></tr></thead>
+  <tbody>{% for alumno, item in filas %}<tr>
+    <td><a href="{{ url_for('alumnos.perfil', id=alumno.id) }}">{{ alumno.apellidos }} {{ alumno.nombres }}</a></td>
+    <td>{{ item.plan.nombre if item else '—' }}</td><td>{{ item.frecuencia.nombre if item else '—' }}</td>
+    <td>{% if item %}{{ item.moneda_snapshot }} {{ '%.2f'|format(item.tarifa_base_snapshot) }}{% else %}—{% endif %}</td>
+    <td>{{ item.fecha_inicio.strftime('%d/%m/%Y') if item else '—' }}</td><td><span class="badge {{ 'bg-success' if item else 'bg-secondary' }}">{{ 'ACTIVA' if item else 'Sin configuración' }}</span></td>
+    <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('finanzas.configuracion_alumno', alumno_id=alumno.id) }}">{{ ('Editar configuración' if item else 'Asignar plan financiero') if puede_escribir else 'Consultar' }}</a> <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('finanzas.estado_cuenta_alumno', alumno_id=alumno.id) }}">Estado de cuenta</a></td>
+  </tr>{% else %}<tr><td colspan="7" class="text-muted">No hay alumnos para este filtro.</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}

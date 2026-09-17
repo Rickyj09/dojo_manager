@@ -22,6 +22,8 @@ from app.models.medalla import Medalla
 from app.models.asistencia import Asistencia
 
 from app.utils.auditoria import registrar_auditoria
+from app.models.finanzas import AlumnoPlanFinanciero
+from app.routes.finanzas import _puede_ver_finanzas, _puede_escribir_finanzas
 
 
 alumnos_bp = Blueprint("alumnos", __name__, url_prefix="/alumnos")
@@ -417,5 +419,10 @@ def perfil(id):
     return render_template(
         "alumnos/perfil.html",
         alumno=alumno,
-        participaciones=participaciones
+        participaciones=participaciones,
+        ver_finanzas=_puede_ver_finanzas() and alumno.academia_id == current_user.academia_id,
+        puede_escribir_finanzas=_puede_escribir_finanzas(),
+        asignacion_financiera=AlumnoPlanFinanciero.query.filter_by(
+            academia_id=current_user.academia_id, alumno_id=alumno.id, estado="ACTIVO",
+        ).first() if _puede_ver_finanzas() else None,
     )

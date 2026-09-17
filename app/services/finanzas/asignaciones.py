@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import or_
+from sqlalchemy import or_, update
 
 from app.extensions import db
 from app.models.alumno import Alumno
@@ -67,20 +67,12 @@ def _validar_objeto_tenant(model, entity_id: int, academia_id: int, mensaje: str
     return item
 
 
-def asignar_plan_financiero(
+def resolver_tarifa_asignacion(
     *,
-    academia_id: int,
-    alumno_id: int,
-    plan_id: int,
-    frecuencia_id: int,
-    fecha_inicio: date,
-    usuario_id: int | None = None,
-    tarifario_id: int | None = None,
-    tarifa_plan_id: int | None = None,
-    grupo_familiar_id: int | None = None,
-    motivo: str | None = None,
+    academia_id, plan_id, frecuencia_id, fecha_inicio,
+    tarifario_id=None, tarifa_plan_id=None,
 ):
-    alumno = _validar_objeto_tenant(Alumno, alumno_id, academia_id, "Alumno no pertenece a la academia indicada")
+    """Resolución común para consultar y guardar, sin mutaciones."""
     plan = _validar_objeto_tenant(PlanFinanciero, plan_id, academia_id, "Plan no pertenece a la academia indicada")
     frecuencia = _validar_objeto_tenant(
         FrecuenciaEntrenamiento,
@@ -128,9 +120,46 @@ def asignar_plan_financiero(
             .first()
         )
     if tarifa is None:
-        raise FinanzasError("Tarifa/configuracion no disponible")
+        raise FinanzasError("Tarifa/configuracion no disponible. No existe una tarifa activa para el plan y frecuencia seleccionados.")
+    return tarifa
 
-    if grupo_familiar_id is not None:
+
+def asignar_plan_financiero(
+    *, academia_id: int, alumno_id: int, plan_id: int, frecuencia_id: int,
+    fecha_inicio: date, usuario_id: int | None = None,
+    tarifario_id: int | None = None, tarifa_plan_id: int | None = None,
+    grupo_familiar_id: int | None = None, motivo: str | None = None,
+    aplicar_descuentos: bool = True, asignacion_actual_id: int | None = None,
+):
+    # El UPDATE sin cambio de valor serializa por alumno también en SQLite,
+    # donde SELECT FOR UPDATE no bloquea. El lock dura hasta commit/rollback.
+    bloqueado = db.session.execute(
+        update(Alumno).where(Alumno.id == alumno_id, Alumno.academia_id == academia_id)
+        .values(activo=Alumno.activo).execution_options(synchronize_session=False)
+    )
+    if bloqueado.rowcount != 1:
+        raise FinanzasError("Alumno no pertenece a la academia indicada")
+    alumno = _validar_objeto_tenant(Alumno, alumno_id, academia_id, "Alumno no pertenece a la academia indicada")
+    activas = AlumnoPlanFinanciero.query.filter_by(
+        academia_id=academia_id, alumno_id=alumno.id, estado="ACTIVO",
+    ).populate_existing().all()
+    if len(activas) > 1:
+        raise FinanzasError("El alumno posee varias asignaciones activas. Revise su configuración antes de continuar.")
+    anterior = activas[0] if activas else None
+    if asignacion_actual_id is not None and asignacion_actual_id != (anterior.id if anterior else 0):
+        raise FinanzasError("La configuración financiera cambió. Vuelva a abrir el formulario antes de guardar.")
+    if anterior is not None and fecha_inicio <= anterior.fecha_inicio:
+        raise FinanzasError("La nueva asignacion debe iniciar despues de la asignacion activa")
+
+    tarifa = resolver_tarifa_asignacion(
+        academia_id=academia_id, plan_id=plan_id, frecuencia_id=frecuencia_id,
+        fecha_inicio=fecha_inicio, tarifario_id=tarifario_id, tarifa_plan_id=tarifa_plan_id,
+    )
+    tarifario, plan, frecuencia = tarifa.tarifario, tarifa.plan, tarifa.frecuencia
+
+    if not aplicar_descuentos:
+        grupo_familiar = None
+    elif grupo_familiar_id is not None:
         grupo_familiar = _validar_objeto_tenant(
             GrupoFamiliar,
             grupo_familiar_id,
@@ -154,7 +183,7 @@ def asignar_plan_financiero(
         academia_id=academia_id,
         cantidad_alumnos=cantidad_familia,
         fecha=fecha_inicio,
-    )
+    ) if aplicar_descuentos else None
     regla_ids = [regla.id] if regla is not None else []
 
     resultado = calcular_tarifa(
@@ -167,19 +196,13 @@ def asignar_plan_financiero(
             "cantidad_alumnos": cantidad_familia,
             "fecha": fecha_inicio,
         },
+        aplicar_descuentos=aplicar_descuentos,
     )
 
     descuento = resultado.descuentos_aplicados[0]["descuento"] if resultado.descuentos_aplicados else Decimal("0.00")
     porcentaje = regla.porcentaje if regla is not None else None
 
-    anterior = (
-        AlumnoPlanFinanciero.query
-        .filter_by(academia_id=academia_id, alumno_id=alumno.id, estado="ACTIVO")
-        .first()
-    )
     if anterior is not None:
-        if fecha_inicio <= anterior.fecha_inicio:
-            raise FinanzasError("La nueva asignacion debe iniciar despues de la asignacion activa")
         anterior.fecha_fin = fecha_inicio - timedelta(days=1)
         anterior.estado = "FINALIZADO"
 

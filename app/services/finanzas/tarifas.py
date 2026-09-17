@@ -55,6 +55,7 @@ def calcular_tarifa(
     plan_id: int,
     frecuencia_id: int,
     contexto_descuentos: dict | None = None,
+    aplicar_descuentos: bool = True,
 ) -> ResultadoCalculoTarifa:
     contexto_descuentos = contexto_descuentos or {}
 
@@ -79,6 +80,8 @@ def calcular_tarifa(
     )
 
     valor_base = redondear_dinero(tarifa.valor_base)
+    if not aplicar_descuentos:
+        return ResultadoCalculoTarifa(tarifa_base=valor_base, valor_final=valor_base)
     valor_actual = valor_base
     descuentos = []
 

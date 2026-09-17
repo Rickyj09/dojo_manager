@@ -6,7 +6,9 @@ from werkzeug.exceptions import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from app.models.alumno import Alumno
-from app.models.finanzas import FrecuenciaEntrenamiento, PlanFinanciero, TarifaPlan, Tarifario
+from app.models.finanzas import AlumnoPlanFinanciero, FrecuenciaEntrenamiento, PlanFinanciero, TarifaPlan, Tarifario
+from sqlalchemy import and_
+from sqlalchemy.orm import joinedload
 from app.extensions import db
 from app.services.finanzas import (
     MEDIOS_PAGO_FINANCIERO,
@@ -27,6 +29,8 @@ from app.services.finanzas import (
     resolver_ruta_comprobante,
 )
 from app.services.finanzas.familias import FinanzasError
+from app.services.finanzas.asignaciones import asignar_plan_financiero, resolver_tarifa_asignacion
+from app.services.finanzas.tarifas import calcular_tarifa
 from app.services.finanzas.tarifarios import (
     ESTADOS_TARIFARIO, alternar_tarifa, guardar_tarifa, guardar_tarifario, tarifas_editables,
 )
@@ -159,6 +163,97 @@ def _tarifa_de_tarifario(academia_id, tarifario_id, tarifa_id):
     return TarifaPlan.query.filter_by(
         id=tarifa_id, academia_id=academia_id, tarifario_id=tarifario_id,
     ).first_or_404()
+
+
+@finanzas_bp.route("/asignaciones")
+@login_required
+def asignaciones():
+    if not _puede_ver_finanzas():
+        abort(403)
+    academia_id = _academia_id_or_403()
+    filtro = request.args.get("estado", "todos")
+    query = db.session.query(Alumno, AlumnoPlanFinanciero).outerjoin(
+        AlumnoPlanFinanciero, and_(
+            AlumnoPlanFinanciero.alumno_id == Alumno.id,
+            AlumnoPlanFinanciero.academia_id == academia_id,
+            AlumnoPlanFinanciero.estado == "ACTIVO",
+        ),
+    ).filter(Alumno.academia_id == academia_id).options(
+        joinedload(AlumnoPlanFinanciero.plan), joinedload(AlumnoPlanFinanciero.frecuencia),
+    )
+    if current_user.has_role("PROFESOR"):
+        query = query.filter(Alumno.sucursal_id == current_user.sucursal_id)
+    if filtro == "con":
+        query = query.filter(AlumnoPlanFinanciero.id.isnot(None))
+    elif filtro == "sin":
+        query = query.filter(AlumnoPlanFinanciero.id.is_(None))
+    return render_template(
+        "finanzas/asignaciones.html", filas=query.order_by(Alumno.apellidos, Alumno.nombres, Alumno.id).all(),
+        filtro=filtro, puede_escribir=_puede_escribir_finanzas(),
+    )
+
+
+@finanzas_bp.route("/alumnos/<int:alumno_id>/configuracion", methods=["GET", "POST"])
+@login_required
+def configuracion_alumno(alumno_id):
+    if not _puede_ver_finanzas() or (request.method == "POST" and not _puede_escribir_finanzas()):
+        abort(403)
+    academia_id = _academia_id_or_403()
+    alumno = _validar_alumno_visible(academia_id, alumno_id)
+    historial = AlumnoPlanFinanciero.query.filter_by(
+        academia_id=academia_id, alumno_id=alumno.id,
+    ).order_by(AlumnoPlanFinanciero.fecha_inicio.desc(), AlumnoPlanFinanciero.id.desc()).all()
+    actual = next((item for item in historial if item.estado == "ACTIVO"), None)
+    datos = request.form if request.method == "POST" else request.args
+    form = {
+        "plan_id": datos.get("plan_id", str(actual.plan_id) if actual else ""),
+        "frecuencia_id": datos.get("frecuencia_id", str(actual.frecuencia_id) if actual else ""),
+        "fecha_inicio": datos.get("fecha_inicio", date.today().isoformat()),
+        "asignacion_actual_id": datos.get("asignacion_actual_id", str(actual.id) if actual else "0"),
+    }
+    tarifa = resultado = None
+    error = None
+    if datos or (form["plan_id"] and form["frecuencia_id"]):
+        try:
+            try:
+                plan_id = int(form["plan_id"])
+                frecuencia_id = int(form["frecuencia_id"])
+                fecha = date.fromisoformat(form["fecha_inicio"])
+            except (ValueError, TypeError):
+                raise FinanzasError("Seleccione un plan, una frecuencia y una fecha de inicio válidos.")
+            # No se aceptan referencias de precio ni importes enviados por el cliente.
+            if any(datos.get(campo) for campo in ("tarifario_id", "tarifa_plan_id")):
+                raise FinanzasError("El tarifario y la tarifa se resuelven automáticamente para la fecha indicada.")
+            tarifa = resolver_tarifa_asignacion(
+                academia_id=academia_id, plan_id=plan_id, frecuencia_id=frecuencia_id, fecha_inicio=fecha,
+            )
+            resultado = calcular_tarifa(
+                academia_id=academia_id, plan_id=plan_id, frecuencia_id=frecuencia_id,
+                tarifario_id=tarifa.tarifario_id, contexto_descuentos={"fecha": fecha}, aplicar_descuentos=False,
+            )
+            if request.method == "POST" and datos.get("accion") != "consultar":
+                try:
+                    esperada = int(request.form["asignacion_actual_id"])
+                except (KeyError, ValueError):
+                    raise FinanzasError("Vuelva a abrir el formulario antes de guardar la configuración.")
+                asignar_plan_financiero(
+                    academia_id=academia_id, alumno_id=alumno.id, plan_id=plan_id,
+                    frecuencia_id=frecuencia_id, fecha_inicio=fecha, usuario_id=current_user.id,
+                    aplicar_descuentos=False, asignacion_actual_id=esperada,
+                )
+                db.session.commit()
+                flash("Configuración financiera guardada correctamente.", "success")
+                return redirect(url_for("finanzas.configuracion_alumno", alumno_id=alumno.id))
+        except (FinanzasError, IntegrityError) as exc:
+            db.session.rollback()
+            error = str(exc).removeprefix("Tarifa/configuracion no disponible. ") if isinstance(exc, FinanzasError) else "No se pudo guardar la configuración. Vuelva a abrir el formulario."
+    planes = PlanFinanciero.query.filter_by(academia_id=academia_id, activo=True).order_by(PlanFinanciero.orden, PlanFinanciero.nombre).all()
+    frecuencias = FrecuenciaEntrenamiento.query.filter_by(academia_id=academia_id, activo=True).order_by(FrecuenciaEntrenamiento.nombre).all()
+    return render_template(
+        "finanzas/asignacion_form.html", alumno=alumno, asignacion_financiera=actual, historial=historial,
+        form=form, planes=planes, frecuencias=frecuencias, tarifa=tarifa, resultado=resultado, error=error,
+        puede_escribir_finanzas=_puede_escribir_finanzas(), ver_finanzas=True,
+    )
 
 
 @finanzas_bp.route("/tarifarios")
