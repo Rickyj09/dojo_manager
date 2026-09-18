@@ -11,7 +11,10 @@ from app.models.finanzas import (
     TarifaPlan,
     Tarifario,
 )
+from app.services.finanzas.asignaciones import asignar_plan_financiero
+from app.services.finanzas.familias import asignar_alumno_a_familia, contar_alumnos_activos_de_familia, crear_grupo_familiar, obtener_familia_activa_del_alumno, retirar_alumno_de_familia
 from app.services.finanzas.tarifas import calcular_tarifa, redondear_dinero
+from tests.test_finanzas_familias_planes import crear_regla, preparar_regular_d2
 
 
 def _crear_tarifario_base(db, academia_id):
@@ -215,6 +218,41 @@ def test_regla_15_por_ciento(db, base_data):
     assert resultado.valor_final == Decimal("46.75")
 
 
+def test_lista_vacia_de_reglas_no_aplica_descuentos_activos(db, base_data):
+    academia_id = base_data["academia_a"].id
+    tarifario = _crear_tarifario_base(db, academia_id)
+    plan = _crear_plan(db, academia_id, "REGULAR")
+    frecuencia = _crear_frecuencia(db, academia_id, "D2", 2)
+    _crear_tarifa(db, academia_id, tarifario, plan, frecuencia, "55.00")
+
+    beca = ReglaDescuento(
+        academia_id=academia_id,
+        codigo="BECA_50",
+        nombre="Beca 50%",
+        tipo="BECA",
+        porcentaje=Decimal("50.00"),
+        activo=True,
+    )
+    db.session.add(beca)
+    db.session.commit()
+
+    resultado = calcular_tarifa(
+        academia_id=academia_id,
+        tarifario_id=tarifario.id,
+        plan_id=plan.id,
+        frecuencia_id=frecuencia.id,
+        contexto_descuentos={
+            "reglas_descuento_ids": [],
+            "fecha": date(2026, 9, 1),
+        },
+        aplicar_descuentos=True,
+    )
+
+    assert resultado.tarifa_base == Decimal("55.00")
+    assert resultado.valor_final == Decimal("55.00")
+    assert resultado.descuentos_aplicados == []
+
+
 def test_redondeo_financiero_definido():
     assert redondear_dinero(Decimal("33.335")) == Decimal("33.34")
 
@@ -317,3 +355,37 @@ def test_casos_base_borjas_lions_como_fixture_de_prueba(db, base_data):
             frecuencia_id=frecuencia.id,
         )
         assert resultado.valor_final == Decimal(valor)
+
+def test_descuento_fijo_no_supera_valor_de_tarifa(db, base_data):
+    academia_id = base_data["academia_a"].id
+    tarifario = _crear_tarifario_base(db, academia_id)
+    plan = _crear_plan(db, academia_id, "REGULAR")
+    frecuencia = _crear_frecuencia(db, academia_id, "D2", 2)
+    _crear_tarifa(db, academia_id, tarifario, plan, frecuencia, "55.00")
+
+    beca = ReglaDescuento(
+        academia_id=academia_id,
+        codigo="BECA_FIJA",
+        nombre="Beca fija",
+        tipo="BECA",
+        valor_fijo=Decimal("100.00"),
+        activo=True,
+    )
+    db.session.add(beca)
+    db.session.commit()
+
+    resultado = calcular_tarifa(
+        academia_id=academia_id,
+        tarifario_id=tarifario.id,
+        plan_id=plan.id,
+        frecuencia_id=frecuencia.id,
+        contexto_descuentos={
+            "reglas_descuento_ids": [beca.id],
+            "fecha": date(2026, 9, 1),
+        },
+        aplicar_descuentos=True,
+    )
+
+    assert resultado.tarifa_base == Decimal("55.00")
+    assert resultado.valor_final == Decimal("0.00")
+    assert resultado.descuentos_aplicados[0]["descuento"] == Decimal("55.00")

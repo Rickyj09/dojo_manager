@@ -90,7 +90,7 @@ def calcular_tarifa(
         ReglaDescuento.academia_id == academia_id,
         ReglaDescuento.activo.is_(True),
     )
-    if regla_ids:
+    if "reglas_descuento_ids" in contexto_descuentos:
         reglas_query = reglas_query.filter(ReglaDescuento.id.in_(regla_ids))
     elif "tipo" in contexto_descuentos:
         reglas_query = reglas_query.filter(ReglaDescuento.tipo == contexto_descuentos["tipo"])
@@ -114,6 +114,7 @@ def calcular_tarifa(
         if descuento <= 0:
             continue
 
+        descuento = min(descuento, valor_actual)
         valor_actual = max(Decimal("0.00"), redondear_dinero(valor_actual - descuento))
         descuentos.append(
             {

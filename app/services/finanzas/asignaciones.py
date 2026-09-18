@@ -159,6 +159,7 @@ def asignar_plan_financiero(
 
     if not aplicar_descuentos:
         grupo_familiar = None
+
     elif grupo_familiar_id is not None:
         grupo_familiar = _validar_objeto_tenant(
             GrupoFamiliar,
@@ -166,24 +167,44 @@ def asignar_plan_financiero(
             academia_id,
             "Grupo familiar no pertenece a la academia indicada",
         )
-        familia_activa = obtener_familia_activa_del_alumno(academia_id=academia_id, alumno_id=alumno.id)
+
+        familia_activa = obtener_familia_activa_del_alumno(
+            academia_id=academia_id,
+            alumno_id=alumno.id,
+            fecha_referencia=fecha_inicio,
+        )
+
         if familia_activa is None or familia_activa.id != grupo_familiar.id:
-            raise FinanzasError("El alumno no pertenece a la familia indicada")
+            raise FinanzasError(
+                "El alumno no pertenece a la familia indicada"
+            )
+
     else:
-        grupo_familiar = obtener_familia_activa_del_alumno(academia_id=academia_id, alumno_id=alumno.id)
+        grupo_familiar = obtener_familia_activa_del_alumno(
+            academia_id=academia_id,
+            alumno_id=alumno.id,
+            fecha_referencia=fecha_inicio,
+        )
 
     cantidad_familia = 1
+
     if grupo_familiar is not None:
         cantidad_familia = contar_alumnos_activos_de_familia(
             academia_id=academia_id,
             grupo_familiar_id=grupo_familiar.id,
+            fecha_referencia=fecha_inicio,
         )
 
-    regla = resolver_regla_hermanos(
-        academia_id=academia_id,
-        cantidad_alumnos=cantidad_familia,
-        fecha=fecha_inicio,
-    ) if aplicar_descuentos else None
+    regla = (
+        resolver_regla_hermanos(
+            academia_id=academia_id,
+            cantidad_alumnos=cantidad_familia,
+            fecha=fecha_inicio,
+        )
+        if aplicar_descuentos
+        else None
+    )
+
     regla_ids = [regla.id] if regla is not None else []
 
     resultado = calcular_tarifa(
@@ -199,7 +220,12 @@ def asignar_plan_financiero(
         aplicar_descuentos=aplicar_descuentos,
     )
 
-    descuento = resultado.descuentos_aplicados[0]["descuento"] if resultado.descuentos_aplicados else Decimal("0.00")
+    descuento = (
+        resultado.descuentos_aplicados[0]["descuento"]
+        if resultado.descuentos_aplicados
+        else Decimal("0.00")
+    )
+
     porcentaje = regla.porcentaje if regla is not None else None
 
     if anterior is not None:
@@ -213,8 +239,16 @@ def asignar_plan_financiero(
         frecuencia_id=frecuencia.id,
         tarifario_id=tarifario.id,
         tarifa_plan_id=tarifa.id,
-        grupo_familiar_id=grupo_familiar.id if grupo_familiar is not None else None,
-        regla_descuento_id=regla.id if regla is not None else None,
+        grupo_familiar_id=(
+            grupo_familiar.id
+            if grupo_familiar is not None
+            else None
+        ),
+        regla_descuento_id=(
+            regla.id
+            if regla is not None
+            else None
+        ),
         fecha_inicio=fecha_inicio,
         tarifa_base_snapshot=resultado.tarifa_base,
         descuento_porcentaje_snapshot=porcentaje,
@@ -225,6 +259,8 @@ def asignar_plan_financiero(
         motivo=motivo,
         created_by_id=usuario_id,
     )
+
     db.session.add(asignacion)
     db.session.flush()
+
     return asignacion

@@ -589,3 +589,191 @@ def test_alumno_sin_familia_funciona_como_individual(db, base_data):
     assert obtener_familia_activa_del_alumno(academia_id=academia_id, alumno_id=base_data["alumno_a1"].id) is None
     assert asignacion.grupo_familiar_id is None
     assert asignacion.valor_final_snapshot == Decimal("55.00")
+
+def test_obtener_familia_historica_despues_del_retiro(db, base_data):
+    academia_id = base_data["academia_a"].id
+    alumno = base_data["alumno_a1"]
+
+    grupo = crear_grupo_familiar(
+        academia_id=academia_id,
+        codigo="FAM-000001",
+        nombre="Familia",
+    )
+
+    asignar_alumno_a_familia(
+        academia_id=academia_id,
+        alumno_id=alumno.id,
+        grupo_familiar_id=grupo.id,
+        fecha_inicio=date(2026, 9, 1),
+    )
+
+    retirar_alumno_de_familia(
+        academia_id=academia_id,
+        alumno_id=alumno.id,
+        fecha_fin=date(2026, 10, 1),
+    )
+
+    db.session.commit()
+
+    assert obtener_familia_activa_del_alumno(
+        academia_id=academia_id,
+        alumno_id=alumno.id,
+    ) is None
+
+    familia_septiembre = obtener_familia_activa_del_alumno(
+        academia_id=academia_id,
+        alumno_id=alumno.id,
+        fecha_referencia=date(2026, 9, 15),
+    )
+    assert familia_septiembre is not None
+    assert familia_septiembre.id == grupo.id
+
+    familia_dia_retiro = obtener_familia_activa_del_alumno(
+        academia_id=academia_id,
+        alumno_id=alumno.id,
+        fecha_referencia=date(2026, 10, 1),
+    )
+    assert familia_dia_retiro is not None
+    assert familia_dia_retiro.id == grupo.id
+
+    assert obtener_familia_activa_del_alumno(
+        academia_id=academia_id,
+        alumno_id=alumno.id,
+        fecha_referencia=date(2026, 10, 2),
+    ) is None
+
+
+def test_contar_integrantes_usa_composicion_historica(db, base_data):
+    academia_id = base_data["academia_a"].id
+    alumno_1 = base_data["alumno_a1"]
+    alumno_2 = base_data["alumno_a2"]
+
+    grupo = crear_grupo_familiar(
+        academia_id=academia_id,
+        codigo="FAM-000001",
+        nombre="Familia",
+    )
+
+    for alumno in (alumno_1, alumno_2):
+        asignar_alumno_a_familia(
+            academia_id=academia_id,
+            alumno_id=alumno.id,
+            grupo_familiar_id=grupo.id,
+            fecha_inicio=date(2026, 9, 1),
+        )
+
+    retirar_alumno_de_familia(
+        academia_id=academia_id,
+        alumno_id=alumno_2.id,
+        fecha_fin=date(2026, 10, 1),
+    )
+
+    db.session.commit()
+
+    assert contar_alumnos_activos_de_familia(
+        academia_id=academia_id,
+        grupo_familiar_id=grupo.id,
+    ) == 1
+
+    assert contar_alumnos_activos_de_familia(
+        academia_id=academia_id,
+        grupo_familiar_id=grupo.id,
+        fecha_referencia=date(2026, 9, 15),
+    ) == 2
+
+    assert contar_alumnos_activos_de_familia(
+        academia_id=academia_id,
+        grupo_familiar_id=grupo.id,
+        fecha_referencia=date(2026, 10, 1),
+    ) == 2
+
+    assert contar_alumnos_activos_de_familia(
+        academia_id=academia_id,
+        grupo_familiar_id=grupo.id,
+        fecha_referencia=date(2026, 10, 2),
+    ) == 1
+
+
+def test_familia_desactivada_conserva_consulta_historica(db, base_data):
+    academia_id = base_data["academia_a"].id
+    alumno = base_data["alumno_a1"]
+
+    grupo = crear_grupo_familiar(
+        academia_id=academia_id,
+        codigo="FAM-000001",
+        nombre="Familia",
+    )
+
+    asignar_alumno_a_familia(
+        academia_id=academia_id,
+        alumno_id=alumno.id,
+        grupo_familiar_id=grupo.id,
+        fecha_inicio=date(2026, 9, 1),
+    )
+
+    grupo.activo = False
+    db.session.commit()
+
+    assert obtener_familia_activa_del_alumno(
+        academia_id=academia_id,
+        alumno_id=alumno.id,
+    ) is None
+
+    historica = obtener_familia_activa_del_alumno(
+        academia_id=academia_id,
+        alumno_id=alumno.id,
+        fecha_referencia=date(2026, 9, 15),
+    )
+
+    assert historica is not None
+    assert historica.id == grupo.id
+
+def test_asignar_plan_usa_composicion_familiar_de_fecha_inicio(db, base_data):
+    academia_id, _tarifario, plan, frecuencia, _ = preparar_regular_d2(
+        db,
+        base_data,
+    )
+
+    grupo = crear_grupo_familiar(
+        academia_id=academia_id,
+        codigo="FAM-000001",
+        nombre="Familia",
+    )
+
+    for alumno in (base_data["alumno_a1"], base_data["alumno_a2"]):
+        asignar_alumno_a_familia(
+            academia_id=academia_id,
+            alumno_id=alumno.id,
+            grupo_familiar_id=grupo.id,
+            fecha_inicio=date(2026, 9, 1),
+        )
+
+    crear_regla(
+        db,
+        academia_id,
+        "HERMANOS_2",
+        "10.00",
+        2,
+        decimales=0,
+    )
+
+    retirar_alumno_de_familia(
+        academia_id=academia_id,
+        alumno_id=base_data["alumno_a2"].id,
+        fecha_fin=date(2026, 10, 1),
+    )
+
+    db.session.commit()
+
+    asignacion = asignar_plan_financiero(
+        academia_id=academia_id,
+        alumno_id=base_data["alumno_a1"].id,
+        plan_id=plan.id,
+        frecuencia_id=frecuencia.id,
+        fecha_inicio=date(2026, 9, 15),
+    )
+
+    assert asignacion.grupo_familiar_id == grupo.id
+    assert asignacion.descuento_porcentaje_snapshot == Decimal("10.00")
+    assert asignacion.descuento_valor_snapshot == Decimal("5.00")
+    assert asignacion.valor_final_snapshot == Decimal("50.00")
