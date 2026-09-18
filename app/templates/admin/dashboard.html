@@ -2,8 +2,13 @@
 
 {% block title %}Dashboard{% endblock %}
 
+{% block admin_branding %}
+  {% with branding_titulo='Panel de ' ~ (tenant_nombre or app_nombre) %}
+    {% include "partials/branding_header.html" %}
+  {% endwith %}
+{% endblock %}
+
 {% block content %}
-<h1 class="mb-4">Dashboard</h1>
 
 <div class="row g-4">
     <div class="col-md-4">

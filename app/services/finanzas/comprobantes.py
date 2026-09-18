@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from flask import current_app
 from werkzeug.datastructures import FileStorage
-from werkzeug.utils import secure_filename
+from app.services.uploads import nombre_archivo_seguro
 
 from app.extensions import db
 from app.models.finanzas import PagoComprobante, PagoFinanciero
@@ -34,9 +34,7 @@ def _max_bytes() -> int:
 
 
 def _nombre_original_seguro(filename: str | None) -> str:
-    filename = (filename or "").replace("\\", "/").split("/")[-1].strip()
-    filename = secure_filename(filename)
-    return (filename or "comprobante")[:255]
+    return nombre_archivo_seguro(filename, predeterminado="comprobante")
 
 
 def _extension(filename: str) -> str:

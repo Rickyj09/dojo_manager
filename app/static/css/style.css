@@ -17,23 +17,6 @@
     display: block;
 }
 
-/* LOGO SIDEBAR */
-.sidebar-logo {
-    max-width: 140px;     /* tamaño controlado */
-    width: 100%;
-    height: auto;
-    display: block;
-    margin: 0 auto;
-}
-
-/* CONTENEDOR DEL LOGO */
-.sidebar-brand {
-    padding: 1rem 0;
-    overflow: hidden;    /* CLAVE */
-}
-
-
-
 /* Ajuste para mobile */
 @media (max-width: 768px) {
   .hero-img {

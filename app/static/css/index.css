@@ -7,6 +7,8 @@ body {
 .sidebar {
     width: 260px;
     min-width: 260px;
+    min-height: 100vh;
+    flex-shrink: 0;
 }
 
 .sidebar .nav-link {
@@ -29,20 +31,23 @@ body {
 }
 
 .sidebar-logo {
-    max-width: 80px;   /* 🔥 AJUSTE CLAVE */
-    width: 100%;
-    height: auto;
+    width: 96px;
+    height: 96px;
+    max-width: 100%;
+    max-height: 96px;
     object-fit: contain;
     display: block;
     margin: 0 auto;
 }
 
-
-.sidebar-logo {
-    width: 80px;
-    height: auto;
-    border-radius: 8px;
-}
+.admin-main { min-width: 0; }
+.tenant-brand-text { min-width: 0; overflow-wrap: anywhere; }
+.tenant-brand-logo { width: 48px; height: 48px; object-fit: contain; flex-shrink: 0; }
+.tenant-mobile-logo { width: 32px; height: 32px; object-fit: contain; flex-shrink: 0; }
+.tenant-mobile-brand { display: flex; align-items: center; gap: .5rem; max-width: calc(100% - 64px); white-space: normal; font-size: 1rem; }
+.branding-settings { max-width: 720px; }
+.logo-preview { width: 160px; height: 160px; padding: 12px; display: grid; place-items: center; background: #212529; border-radius: 12px; }
+.logo-preview img { max-width: 100%; max-height: 136px; object-fit: contain; }
 
 .nav-pills .nav-link {
     border-radius: 8px;

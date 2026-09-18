@@ -52,6 +52,13 @@ def create_app():
     db.init_app(app)
     login_manager.init_app(app)
     migrate.init_app(app, db)
+
+    @app.before_request
+    def limitar_carga_branding():
+        if request.endpoint == "academias.identidad_visual":
+            # Antes de que CSRF lea multipart; el servicio limita la imagen a 2 MB.
+            request.max_content_length = 2 * 1024 * 1024 + 64 * 1024
+
     csrf.init_app(app)
 
     # -------------------------
@@ -87,6 +94,7 @@ def create_app():
     # -------------------------
     from flask_login import current_user
     from app.models.academia import Academia
+    from app.services.branding import obtener_logo_academia
 
     @app.context_processor
     def inject_app_and_tenant_context():
@@ -107,6 +115,7 @@ def create_app():
                     a = Academia.query.get(tenant_id)
                     if a:
                         tenant_nombre = a.nombre
+                        tenant_logo = obtener_logo_academia(a)
 
                 if getattr(current_user, "roles", None) and current_user.roles:
                     role_label = current_user.roles[0].name

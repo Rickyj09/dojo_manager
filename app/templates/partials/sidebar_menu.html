@@ -50,6 +50,14 @@
   {% if is_admin %}
 
     <li class="nav-item">
+      <span class="nav-link disabled text-uppercase small text-white-50 py-1">Configuración</span>
+      <a href="{{ url_for('academias.identidad_visual') }}"
+         class="nav-link text-white {% if ep == 'academias.identidad_visual' %}active{% endif %}">
+        <i class="bi bi-palette me-2"></i> Identidad visual
+      </a>
+    </li>
+
+    <li class="nav-item">
       <a href="{{ url_for('admin.usuarios') }}"
          class="nav-link text-white {% if ep == 'admin.usuarios' or ep.startswith('admin.usuario_') %}active{% endif %}">
         <i class="bi bi-people me-2"></i> Usuarios

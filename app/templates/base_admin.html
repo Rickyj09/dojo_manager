@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Panel Administrativo{% endblock %}</title>
+    <link rel="icon" href="{{ url_for('static', filename=(tenant_logo or app_logo)) }}">
 
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -27,15 +28,15 @@
 
         <button class="btn btn-outline-light"
                 data-bs-toggle="offcanvas"
-                data-bs-target="#sidebarMobile">
+                data-bs-target="#sidebarMobile" aria-label="Abrir menú">
             <i class="bi bi-list"></i>
         </button>
 
-        <span class="navbar-brand mb-0">
+        <span class="navbar-brand tenant-mobile-brand mb-0">
+            <img class="tenant-mobile-logo" src="{{ url_for('static', filename=(tenant_logo or app_logo)) }}" alt="Logo de {{ tenant_nombre or app_nombre }}">
+            <span class="tenant-brand-text">
             {{ tenant_nombre or "DojoManager" }}
-            {% if role_label %}
-                <small class="text-secondary ms-2">{{ role_label }}</small>
-            {% endif %}
+            </span>
         </span>
 
     </div>
@@ -70,15 +71,20 @@
 <div class="d-flex">
 
     <!-- SIDEBAR DESKTOP -->
-    <aside class="bg-dark text-white p-3 d-none d-md-flex flex-column"
-           style="width:260px; min-height:100vh;">
+    <aside class="sidebar bg-dark text-white p-3 d-none d-md-flex flex-column">
 
         {% include "partials/sidebar_menu.html" %}
 
     </aside>
 
     <!-- CONTENIDO PRINCIPAL -->
-    <main class="flex-grow-1 p-4">
+    <main class="admin-main flex-grow-1 p-3 p-md-4">
+
+        <header class="admin-topbar pb-3 mb-4 border-bottom">
+          {% block admin_branding %}
+            {% include "partials/branding_header.html" %}
+          {% endblock %}
+        </header>
 
         <!-- Flash messages -->
         {% with messages = get_flashed_messages(with_categories=true) %}

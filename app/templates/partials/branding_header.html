@@ -1,0 +1,13 @@
+{# Cabecera reutilizable para administración, estados de cuenta y futuros documentos. #}
+<div class="tenant-brand d-flex align-items-center gap-3">
+  <img class="tenant-brand-logo" src="{{ url_for('static', filename=(tenant_logo or app_logo)) }}" alt="Logo de {{ tenant_nombre or app_nombre }}">
+  <div class="tenant-brand-text">
+    {% if branding_titulo %}
+      <div class="text-muted small">{{ tenant_nombre or app_nombre }}</div>
+      <h1 class="h4 mb-0">{{ branding_titulo }}</h1>
+    {% else %}
+      <div class="fw-semibold">{{ tenant_nombre or app_nombre }}</div>
+    {% endif %}
+    <div class="text-muted small">Plataforma Dojo_Manager</div>
+  </div>
+</div>

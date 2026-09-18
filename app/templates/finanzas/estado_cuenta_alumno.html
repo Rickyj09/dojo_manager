@@ -1,12 +1,17 @@
 {% extends "base_admin.html" %}
 {% block title %}Estado de cuenta{% endblock %}
 
+{% block admin_branding %}
+  {% with branding_titulo='Estado de cuenta' %}
+    {% include "partials/branding_header.html" %}
+  {% endwith %}
+{% endblock %}
+
 {% block content %}
 {% set alumno = estado_cuenta.alumno %}
 
 <div class="d-flex justify-content-between align-items-start mb-4">
   <div>
-    <h3 class="mb-1">Estado de cuenta</h3>
     <p class="text-muted mb-0">{{ alumno.nombres }} {{ alumno.apellidos }}</p>
   </div>
   <div class="d-flex gap-2">
