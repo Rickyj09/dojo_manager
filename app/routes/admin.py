@@ -1,16 +1,26 @@
-from flask import Blueprint, abort, render_template, flash, request, redirect, url_for
-from flask_login import login_required, current_user
-from app.extensions import db
-##from app.auth.decorators import admin_required
-from app.models import User,Role, Alumno,Sucursal
-from sqlalchemy import func
 from datetime import date, datetime
-from app.models import Asistencia
+
+from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
+from sqlalchemy import case, func
+
+from app.extensions import db
+from app.models import Alumno, Asistencia, Role, Sucursal, User
 
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
+
+# ============================================================
+# PERMISOS / TENANCY
+# ============================================================
+
 def can_access_admin() -> bool:
+    """
+    Acceso general al panel administrativo.
+    PROFESOR puede entrar al dashboard/asistencias,
+    pero no administrar usuarios.
+    """
     return (
         current_user.is_authenticated
         and (
@@ -21,278 +31,765 @@ def can_access_admin() -> bool:
     )
 
 
+def can_manage_users() -> bool:
+    """
+    AdministraciÃ³n de usuarios Ãºnicamente para ADMIN/SUPERADMIN.
+    """
+    return (
+        current_user.is_authenticated
+        and (
+            current_user.has_role("SUPERADMIN")
+            or current_user.has_role("ADMIN")
+        )
+    )
+
+
+def _academia_id_actual():
+    """
+    Devuelve la academia del usuario actual.
+
+    Un SUPERADMIN global puede no tener academia asociada.
+    """
+    academia_id = getattr(current_user, "academia_id", None)
+
+    if academia_id:
+        return academia_id
+
+    if current_user.has_role("SUPERADMIN"):
+        return None
+
+    abort(403)
+
+
+def _academia_id_requerida():
+    """
+    Para operaciones que necesariamente deben pertenecer
+    a una academia concreta.
+    """
+    academia_id = _academia_id_actual()
+
+    if academia_id is None:
+        abort(403)
+
+    return academia_id
+
+
+def _usuario_visible_o_404(user_id):
+    """
+    ADMIN:
+        solo puede acceder a usuarios de su propia academia.
+
+    SUPERADMIN global:
+        puede acceder globalmente.
+    """
+    academia_id = _academia_id_actual()
+
+    query = User.query.filter_by(id=user_id)
+
+    if academia_id is not None:
+        query = query.filter_by(academia_id=academia_id)
+
+    user = query.first_or_404()
+
+    # Un ADMIN de academia nunca administra una cuenta SUPERADMIN.
+    if user.has_role("SUPERADMIN") and not current_user.has_role("SUPERADMIN"):
+        abort(403)
+
+    return user
+
+
+def _sucursal_visible_o_404(sucursal_id):
+    """
+    ADMIN/PROFESOR:
+        Ãºnicamente sucursales de su academia.
+
+    SUPERADMIN global:
+        puede acceder globalmente.
+    """
+    academia_id = _academia_id_actual()
+
+    query = Sucursal.query.filter_by(id=sucursal_id)
+
+    if academia_id is not None:
+        query = query.filter_by(academia_id=academia_id)
+
+    return query.first_or_404()
+
+
+def _roles_asignables():
+    """
+    ADMIN de tenant no puede asignar SUPERADMIN.
+
+    SUPERADMIN sÃ­ puede ver todos los roles.
+    """
+    query = Role.query
+
+    if not current_user.has_role("SUPERADMIN"):
+        query = query.filter(Role.name != "SUPERADMIN")
+
+    return query.order_by(Role.name).all()
+
+
+def _roles_seleccionados_o_403(roles_ids):
+    """
+    Valida tambiÃ©n el POST, evitando que alguien agregue manualmente
+    el ID de SUPERADMIN aunque no aparezca en el formulario.
+    """
+    permitidos = {
+        role.id: role
+        for role in _roles_asignables()
+    }
+
+    seleccionados = []
+
+    for rid in roles_ids:
+        try:
+            role_id = int(rid)
+        except (TypeError, ValueError):
+            abort(400)
+
+        role = permitidos.get(role_id)
+
+        if role is None:
+            abort(403)
+
+        seleccionados.append(role)
+
+    return seleccionados
+
+
+# ============================================================
+# DASHBOARD
+# ============================================================
+
 @admin_bp.route("/")
 @login_required
 def dashboard():
     if not can_access_admin():
         abort(403)
 
-    total_alumnos = Alumno.query.count()
-    total_sucursales = Sucursal.query.count()
-    total_usuarios = User.query.count()
+    academia_id = _academia_id_actual()
+
+    if academia_id is not None:
+        total_alumnos = Alumno.query.filter_by(
+            academia_id=academia_id
+        ).count()
+
+        total_sucursales = Sucursal.query.filter_by(
+            academia_id=academia_id
+        ).count()
+
+        total_usuarios = User.query.filter_by(
+            academia_id=academia_id
+        ).count()
+
+    else:
+        # Solo SUPERADMIN global llega aquÃ­.
+        total_alumnos = Alumno.query.count()
+        total_sucursales = Sucursal.query.count()
+        total_usuarios = User.query.count()
 
     return render_template(
         "admin/dashboard.html",
         total_alumnos=total_alumnos,
         total_sucursales=total_sucursales,
-        total_usuarios=total_usuarios
+        total_usuarios=total_usuarios,
     )
 
 
+# ============================================================
+# USUARIOS
+# ============================================================
 
 @admin_bp.route("/usuarios")
 @login_required
-#@admin_required
 def usuarios():
-    usuarios = User.query.order_by(User.username).all()
+    if not can_manage_users():
+        abort(403)
+
+    academia_id = _academia_id_actual()
+
+    if academia_id is not None:
+        usuarios_query = User.query.filter_by(
+            academia_id=academia_id
+        )
+
+        # ADMIN de tenant no necesita ver cuentas SUPERADMIN.
+        if not current_user.has_role("SUPERADMIN"):
+            usuarios_query = usuarios_query.filter(
+                ~User.roles.any(Role.name == "SUPERADMIN")
+            )
+
+        usuarios = usuarios_query.order_by(
+            User.username
+        ).all()
+
+    else:
+        usuarios = User.query.order_by(
+            User.username
+        ).all()
+
     return render_template(
         "admin/usuarios/index.html",
-        usuarios=usuarios
+        usuarios=usuarios,
     )
+
+
+# ============================================================
+# ROLES
+# ============================================================
 
 @admin_bp.route("/roles")
 @login_required
-#@admin_required
 def roles():
-    roles = (
-        db.session.query(
-            Role.id,
-            Role.name,
-            func.count(User.id).label("total_usuarios")
+    if not can_manage_users():
+        abort(403)
+
+    academia_id = _academia_id_actual()
+
+    if academia_id is None:
+        # SUPERADMIN global: conteo global.
+        roles_data = (
+            db.session.query(
+                Role.id,
+                Role.name,
+                func.count(User.id).label("total_usuarios"),
+            )
+            .outerjoin(Role.users)
+            .group_by(Role.id, Role.name)
+            .order_by(Role.name)
+            .all()
         )
-        .outerjoin(Role.users)
-        .group_by(Role.id, Role.name)
-        .order_by(Role.name)
-        .all()
+
+    else:
+        # ADMIN tenant: puede ver catÃ¡logo de roles,
+        # pero el conteo corresponde Ãºnicamente a su academia.
+        roles_data = (
+            db.session.query(
+                Role.id,
+                Role.name,
+                func.count(
+                    case(
+                        (
+                            User.academia_id == academia_id,
+                            User.id,
+                        ),
+                        else_=None,
+                    )
+                ).label("total_usuarios"),
+            )
+            .outerjoin(Role.users)
+            .group_by(Role.id, Role.name)
+            .order_by(Role.name)
+            .all()
+        )
+
+    return render_template(
+        "admin/roles.html",
+        roles=roles_data,
     )
-
-    return render_template("admin/roles.html", roles=roles)
-
 
 
 @admin_bp.route("/roles/nuevo", methods=["GET", "POST"])
 @login_required
-#@admin_required
 def role_nuevo():
+    # Los roles son catÃ¡logo global del sistema.
+    if not current_user.has_role("SUPERADMIN"):
+        abort(403)
+
     if request.method == "POST":
         name = request.form["name"].strip().upper()
 
         if Role.query.filter_by(name=name).first():
             flash("El rol ya existe", "danger")
-            return redirect(url_for("admin.role_nuevo"))
+            return redirect(
+                url_for("admin.role_nuevo")
+            )
 
         role = Role(name=name)
+
         db.session.add(role)
         db.session.commit()
 
-        flash("Rol creado correctamente", "success")
-        return redirect(url_for("admin.roles"))
+        flash(
+            "Rol creado correctamente",
+            "success",
+        )
 
-    return render_template("admin/role_form.html")
+        return redirect(
+            url_for("admin.roles")
+        )
+
+    return render_template(
+        "admin/role_form.html"
+    )
 
 
-@admin_bp.route("/roles/<int:id>/editar", methods=["GET", "POST"])
+@admin_bp.route(
+    "/roles/<int:id>/editar",
+    methods=["GET", "POST"],
+)
 @login_required
-#@admin_required
 def role_editar(id):
+    # Los roles son catÃ¡logo global del sistema.
+    if not current_user.has_role("SUPERADMIN"):
+        abort(403)
+
     role = Role.query.get_or_404(id)
 
     if request.method == "POST":
         role.name = request.form["name"].strip().upper()
+
         db.session.commit()
 
-        flash("Rol actualizado", "success")
-        return redirect(url_for("admin.roles"))
+        flash(
+            "Rol actualizado",
+            "success",
+        )
 
-    return render_template("admin/role_form.html", role=role)
+        return redirect(
+            url_for("admin.roles")
+        )
+
+    return render_template(
+        "admin/role_form.html",
+        role=role,
+    )
 
 
-@admin_bp.route("/roles/<int:id>/eliminar", methods=["POST"])
+@admin_bp.route(
+    "/roles/<int:id>/eliminar",
+    methods=["POST"],
+)
 @login_required
-#@admin_required
 def role_eliminar(id):
+    # Los roles son catÃ¡logo global del sistema.
+    if not current_user.has_role("SUPERADMIN"):
+        abort(403)
+
     role = Role.query.get_or_404(id)
 
-    # Validación: si el rol está asignado a usuarios, no permitir borrar
     if role.users and len(role.users) > 0:
-        flash("No se puede eliminar un rol asignado a usuarios", "danger")
-        return redirect(url_for("admin.roles"))
+        flash(
+            "No se puede eliminar un rol asignado a usuarios",
+            "danger",
+        )
+
+        return redirect(
+            url_for("admin.roles")
+        )
 
     db.session.delete(role)
     db.session.commit()
-    flash("Rol eliminado", "success")
-    return redirect(url_for("admin.roles"))
+
+    flash(
+        "Rol eliminado",
+        "success",
+    )
+
+    return redirect(
+        url_for("admin.roles")
+    )
 
 
-## Usuario Nuevo
-@admin_bp.route("/usuarios/nuevo", methods=["GET", "POST"])
+# ============================================================
+# NUEVO USUARIO
+# ============================================================
+
+@admin_bp.route(
+    "/usuarios/nuevo",
+    methods=["GET", "POST"],
+)
 @login_required
-#@admin_required
 def usuario_nuevo():
-    roles = Role.query.order_by(Role.name).all()
+    if not can_manage_users():
+        abort(403)
+
+    # El formulario actual no permite escoger academia.
+    # Por seguridad, se crea siempre dentro del tenant actual.
+    academia_id = _academia_id_requerida()
+
+    roles_disponibles = _roles_asignables()
 
     if request.method == "POST":
         user = User(
             username=request.form["username"],
             email=request.form["email"],
-            is_active=True
+            is_active=True,
+            academia_id=academia_id,
         )
-        user.set_password(request.form["password"])
 
-        roles_ids = request.form.getlist("roles")
-        for rid in roles_ids:
-            role = Role.query.get(int(rid))
+        user.set_password(
+            request.form["password"]
+        )
+
+        roles_ids = request.form.getlist(
+            "roles"
+        )
+
+        for role in _roles_seleccionados_o_403(
+            roles_ids
+        ):
             user.roles.append(role)
 
         db.session.add(user)
         db.session.commit()
 
-        flash("Usuario creado", "success")
-        return redirect(url_for("admin.usuarios"))
+        flash(
+            "Usuario creado",
+            "success",
+        )
+
+        return redirect(
+            url_for("admin.usuarios")
+        )
 
     return render_template(
         "admin/usuarios/form.html",
         user=None,
-        roles=roles
+        roles=roles_disponibles,
     )
 
-## Editsr usuario + rol
 
-@admin_bp.route("/usuarios/<int:id>/editar", methods=["GET", "POST"])
+# ============================================================
+# EDITAR USUARIO
+# ============================================================
+
+@admin_bp.route(
+    "/usuarios/<int:id>/editar",
+    methods=["GET", "POST"],
+)
 @login_required
-#@admin_required
 def usuario_editar(id):
-    user = User.query.get_or_404(id)
-    roles = Role.query.order_by(Role.name).all()
+    if not can_manage_users():
+        abort(403)
+
+    user = _usuario_visible_o_404(id)
+
+    roles_disponibles = _roles_asignables()
 
     if request.method == "POST":
         user.username = request.form["username"]
         user.email = request.form["email"]
-        user.is_active = "is_active" in request.form
+        user.is_active = (
+            "is_active" in request.form
+        )
 
         user.roles.clear()
-        roles_ids = request.form.getlist("roles")
-        for rid in roles_ids:
-            role = Role.query.get(int(rid))
+
+        roles_ids = request.form.getlist(
+            "roles"
+        )
+
+        for role in _roles_seleccionados_o_403(
+            roles_ids
+        ):
             user.roles.append(role)
 
         db.session.commit()
-        flash("Usuario actualizado", "success")
-        return redirect(url_for("admin.usuarios"))
+
+        flash(
+            "Usuario actualizado",
+            "success",
+        )
+
+        return redirect(
+            url_for("admin.usuarios")
+        )
 
     return render_template(
         "admin/usuarios/form.html",
         user=user,
-        roles=roles
+        roles=roles_disponibles,
     )
 
 
-@admin_bp.route("/usuarios/<int:id>/eliminar", methods=["POST"])
+# ============================================================
+# ELIMINAR USUARIO
+# ============================================================
+
+@admin_bp.route(
+    "/usuarios/<int:id>/eliminar",
+    methods=["POST"],
+)
 @login_required
-#@admin_required
 def usuario_eliminar(id):
-    user = User.query.get_or_404(id)
+    if not can_manage_users():
+        abort(403)
+
+    user = _usuario_visible_o_404(id)
+
+    if user.id == current_user.id:
+        flash(
+            "No puede eliminar su propio usuario",
+            "danger",
+        )
+
+        return redirect(
+            url_for("admin.usuarios")
+        )
 
     if user.username == "admin":
-        flash("No se puede eliminar el usuario admin", "danger")
-        return redirect(url_for("admin.usuarios"))
+        flash(
+            "No se puede eliminar el usuario admin",
+            "danger",
+        )
+
+        return redirect(
+            url_for("admin.usuarios")
+        )
 
     db.session.delete(user)
     db.session.commit()
-    flash("Usuario eliminado", "success")
-    return redirect(url_for("admin.usuarios"))
+
+    flash(
+        "Usuario eliminado",
+        "success",
+    )
+
+    return redirect(
+        url_for("admin.usuarios")
+    )
 
 
-## Reset Password (ADMIN)
+# ============================================================
+# RESET PASSWORD
+# ============================================================
 
-@admin_bp.route("/usuarios/<int:id>/reset-password", methods=["GET", "POST"])
+@admin_bp.route(
+    "/usuarios/<int:id>/reset-password",
+    methods=["GET", "POST"],
+)
 @login_required
-#@admin_required
 def usuario_reset_password(id):
-    user = User.query.get_or_404(id)
+    if not can_manage_users():
+        abort(403)
+
+    user = _usuario_visible_o_404(id)
 
     if request.method == "POST":
-        password = request.form.get("password")
-        password2 = request.form.get("password2")
+        password = request.form.get(
+            "password"
+        )
+
+        password2 = request.form.get(
+            "password2"
+        )
 
         if not password or not password2:
-            flash("Debe ingresar la contraseña", "danger")
-            return redirect(request.url)
+            flash(
+                "Debe ingresar la contraseÃ±a",
+                "danger",
+            )
+
+            return redirect(
+                request.url
+            )
 
         if password != password2:
-            flash("Las contraseñas no coinciden", "danger")
-            return redirect(request.url)
+            flash(
+                "Las contraseÃ±as no coinciden",
+                "danger",
+            )
+
+            return redirect(
+                request.url
+            )
 
         user.set_password(password)
         user.must_change_password = True
+
         db.session.commit()
 
-        flash("Contraseña actualizada correctamente", "success")
-        return redirect(url_for("admin.usuarios"))
+        flash(
+            "ContraseÃ±a actualizada correctamente",
+            "success",
+        )
+
+        return redirect(
+            url_for("admin.usuarios")
+        )
 
     return render_template(
         "admin/usuarios/reset_password.html",
-        user=user
+        user=user,
     )
 
-def admin_required():
-    return current_user.is_authenticated and current_user.has_role("ADMIN")
 
+# ============================================================
+# ASIGNAR SUCURSAL
+# ============================================================
 
-## asignar sucursal
-@admin_bp.route("/usuarios/<int:user_id>/asignar-sucursal", methods=["GET", "POST"])
+@admin_bp.route(
+    "/usuarios/<int:user_id>/asignar-sucursal",
+    methods=["GET", "POST"],
+)
 @login_required
 def asignar_sucursal(user_id):
-    user = User.query.get_or_404(user_id)
+    if not can_manage_users():
+        abort(403)
 
-    # Seguridad: solo profesores
+    user = _usuario_visible_o_404(
+        user_id
+    )
+
     if not user.has_role("PROFESOR"):
-        flash("Este usuario no es profesor", "danger")
-        return redirect(url_for("admin.usuarios"))
+        flash(
+            "Este usuario no es profesor",
+            "danger",
+        )
 
-    sucursales = Sucursal.query.filter_by(activo=True).all()
+        return redirect(
+            url_for("admin.usuarios")
+        )
+
+    # Para SUPERADMIN global, tomamos la academia
+    # del usuario que estÃ¡ siendo administrado.
+    academia_id = getattr(
+        user,
+        "academia_id",
+        None,
+    )
+
+    if not academia_id:
+        abort(400)
+
+    sucursales = (
+        Sucursal.query
+        .filter_by(
+            academia_id=academia_id,
+            activo=True,
+        )
+        .order_by(
+            Sucursal.nombre
+        )
+        .all()
+    )
 
     if request.method == "POST":
-        sucursal_id = request.form.get("sucursal_id")
+        sucursal_id = request.form.get(
+            "sucursal_id",
+            type=int,
+        )
 
         if not sucursal_id:
-            flash("Debe seleccionar una sucursal", "danger")
-            return redirect(request.url)
+            flash(
+                "Debe seleccionar una sucursal",
+                "danger",
+            )
 
-        user.sucursal_id = int(sucursal_id)
+            return redirect(
+                request.url
+            )
+
+        sucursal = Sucursal.query.filter_by(
+            id=sucursal_id,
+            academia_id=academia_id,
+            activo=True,
+        ).first_or_404()
+
+        user.sucursal_id = sucursal.id
+
         db.session.commit()
 
-        flash("Sucursal asignada correctamente", "success")
-        return redirect(url_for("admin.usuarios"))
+        flash(
+            "Sucursal asignada correctamente",
+            "success",
+        )
+
+        return redirect(
+            url_for("admin.usuarios")
+        )
 
     return render_template(
         "admin/usuarios/asignar_sucursal.html",
         usuario=user,
-        sucursales=sucursales
+        sucursales=sucursales,
     )
 
-@admin_bp.route("/asistencias", methods=["GET"])
+
+# ============================================================
+# ASISTENCIAS
+# ============================================================
+
+@admin_bp.route(
+    "/asistencias",
+    methods=["GET"],
+)
 @login_required
 def asistencias():
-    if not (current_user.has_role("SUPERADMIN") or current_user.has_role("ADMIN") or current_user.has_role("PROFESOR")):
+    if not can_access_admin():
         abort(403)
 
-    # fecha filtro
-    fecha_str = request.args.get("fecha")
-    fecha = datetime.strptime(fecha_str, "%Y-%m-%d").date() if fecha_str else date.today()
+    fecha_str = request.args.get(
+        "fecha"
+    )
 
-    # sucursal: profesor bloqueado a su sucursal
-    if current_user.has_role("PROFESOR"):
-        if not current_user.sucursal_id:
-            flash("Tu usuario no tiene sucursal asignada. Pide al admin que te la asigne.", "danger")
-            return redirect(url_for("admin.dashboard"))
-        sucursal_id = current_user.sucursal_id
+    try:
+        fecha = (
+            datetime.strptime(
+                fecha_str,
+                "%Y-%m-%d",
+            ).date()
+            if fecha_str
+            else date.today()
+        )
+
+    except ValueError:
+        abort(400)
+
+    academia_id_actual = (
+        _academia_id_actual()
+    )
+
+    if academia_id_actual is None:
+        # SUPERADMIN global.
+        sucursales_query = (
+            Sucursal.query
+            .filter_by(activo=True)
+        )
+
     else:
-        sucursal_id = request.args.get("sucursal_id", type=int)
+        sucursales_query = (
+            Sucursal.query
+            .filter_by(
+                academia_id=academia_id_actual,
+                activo=True,
+            )
+        )
 
-    sucursales = Sucursal.query.filter_by(activo=True).order_by(Sucursal.nombre).all()
+    sucursales = (
+        sucursales_query
+        .order_by(Sucursal.nombre)
+        .all()
+    )
 
-    # si no elige sucursal (ADMIN), solo muestra pantalla para seleccionar
+    # PROFESOR queda bloqueado
+    # a su sucursal.
+    if current_user.has_role(
+        "PROFESOR"
+    ):
+        if not current_user.sucursal_id:
+            flash(
+                "Tu usuario no tiene sucursal asignada. "
+                "Pide al admin que te la asigne.",
+                "danger",
+            )
+
+            return redirect(
+                url_for("admin.dashboard")
+            )
+
+        sucursal_id = (
+            current_user.sucursal_id
+        )
+
+    else:
+        sucursal_id = request.args.get(
+            "sucursal_id",
+            type=int,
+        )
+
     if not sucursal_id:
         return render_template(
             "admin/asistencias.html",
@@ -300,63 +797,164 @@ def asistencias():
             sucursal_id=None,
             sucursales=sucursales,
             alumnos=[],
-            asistencias_map={}
+            asistencias_map={},
         )
 
-    # alumnos de la sucursal
-    alumnos = Alumno.query.filter_by(sucursal_id=sucursal_id).order_by(Alumno.apellidos, Alumno.nombres).all()
+    sucursal = _sucursal_visible_o_404(
+        sucursal_id
+    )
 
-    # asistencias existentes del día
-    asistencias = Asistencia.query.filter_by(fecha=fecha, sucursal_id=sucursal_id).all()
-    asistencias_map = {a.alumno_id: a for a in asistencias}
+    if (
+        current_user.has_role("PROFESOR")
+        and current_user.sucursal_id
+        != sucursal.id
+    ):
+        abort(403)
+
+    alumnos = (
+        Alumno.query
+        .filter_by(
+            academia_id=sucursal.academia_id,
+            sucursal_id=sucursal.id,
+        )
+        .order_by(
+            Alumno.apellidos,
+            Alumno.nombres,
+        )
+        .all()
+    )
+
+    asistencias_db = (
+        Asistencia.query
+        .filter_by(
+            academia_id=sucursal.academia_id,
+            fecha=fecha,
+            sucursal_id=sucursal.id,
+        )
+        .all()
+    )
+
+    asistencias_map = {
+        asistencia.alumno_id: asistencia
+        for asistencia in asistencias_db
+    }
 
     return render_template(
         "admin/asistencias.html",
         fecha=fecha,
-        sucursal_id=sucursal_id,
+        sucursal_id=sucursal.id,
         sucursales=sucursales,
         alumnos=alumnos,
-        asistencias_map=asistencias_map
+        asistencias_map=asistencias_map,
     )
 
-@admin_bp.route("/asistencias/guardar", methods=["POST"])
+
+# ============================================================
+# GUARDAR ASISTENCIAS
+# ============================================================
+
+@admin_bp.route(
+    "/asistencias/guardar",
+    methods=["POST"],
+)
 @login_required
 def asistencias_guardar():
-    if not (current_user.has_role("SUPERADMIN") or current_user.has_role("ADMIN") or current_user.has_role("PROFESOR")):
+    if not can_access_admin():
         abort(403)
 
-    fecha = datetime.strptime(request.form["fecha"], "%Y-%m-%d").date()
-    sucursal_id = int(request.form["sucursal_id"])
+    fecha_str = request.form.get(
+        "fecha"
+    )
 
-    # profesor: validar que sea su sucursal
-    if current_user.has_role("PROFESOR") and current_user.sucursal_id != sucursal_id:
+    try:
+        fecha = datetime.strptime(
+            fecha_str,
+            "%Y-%m-%d",
+        ).date()
+
+    except (TypeError, ValueError):
+        abort(400)
+
+    sucursal_id = request.form.get(
+        "sucursal_id",
+        type=int,
+    )
+
+    if not sucursal_id:
+        abort(400)
+
+    sucursal = _sucursal_visible_o_404(
+        sucursal_id
+    )
+
+    if (
+        current_user.has_role("PROFESOR")
+        and current_user.sucursal_id
+        != sucursal.id
+    ):
         abort(403)
 
-    # Recibimos estado por alumno: estado_<id>
-    # Ej: estado_15 = P/A/T/J
-    alumnos = Alumno.query.filter_by(sucursal_id=sucursal_id).all()
-    for al in alumnos:
-        key = f"estado_{al.id}"
-        estado = request.form.get(key, "A")  # default ausente si no llega
+    alumnos = (
+        Alumno.query
+        .filter_by(
+            academia_id=sucursal.academia_id,
+            sucursal_id=sucursal.id,
+        )
+        .all()
+    )
 
-        # upsert por unique constraint (fecha, alumno_id, sucursal_id)
-        asistencia = Asistencia.query.filter_by(
-            fecha=fecha, alumno_id=al.id, sucursal_id=sucursal_id
-        ).first()
+    for alumno in alumnos:
+        key = f"estado_{alumno.id}"
+
+        estado = request.form.get(
+            key,
+            "A",
+        )
+
+        asistencia = (
+            Asistencia.query
+            .filter_by(
+                academia_id=sucursal.academia_id,
+                fecha=fecha,
+                alumno_id=alumno.id,
+                sucursal_id=sucursal.id,
+            )
+            .first()
+        )
 
         if asistencia:
             asistencia.estado = estado
-            asistencia.registrado_por_id = current_user.id
+            asistencia.registrado_por_id = (
+                current_user.id
+            )
+
         else:
             asistencia = Asistencia(
+                academia_id=sucursal.academia_id,
                 fecha=fecha,
-                alumno_id=al.id,
-                sucursal_id=sucursal_id,
+                alumno_id=alumno.id,
+                sucursal_id=sucursal.id,
                 estado=estado,
-                registrado_por_id=current_user.id
+                registrado_por_id=current_user.id,
             )
-            db.session.add(asistencia)
+
+            db.session.add(
+                asistencia
+            )
 
     db.session.commit()
-    flash("Asistencia guardada correctamente.", "success")
-    return redirect(url_for("admin.asistencias", fecha=fecha.strftime("%Y-%m-%d"), sucursal_id=sucursal_id))
+
+    flash(
+        "Asistencia guardada correctamente.",
+        "success",
+    )
+
+    return redirect(
+        url_for(
+            "admin.asistencias",
+            fecha=fecha.strftime(
+                "%Y-%m-%d"
+            ),
+            sucursal_id=sucursal.id,
+        )
+    )
