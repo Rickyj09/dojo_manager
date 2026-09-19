@@ -1,0 +1,174 @@
+{% extends "base_admin.html" %}
+{% block title %}Reglas de descuento{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
+  <div>
+    <h3 class="mb-1">Reglas de descuento</h3>
+    <p class="text-muted mb-0">
+      Beneficios y descuentos configurables para esta academia.
+    </p>
+  </div>
+
+  <a class="btn btn-primary"
+     href="{{ url_for('finanzas.nueva_regla_descuento') }}">
+    <i class="bi bi-plus-circle"></i> Nueva regla
+  </a>
+</div>
+
+<div class="alert alert-info">
+  <strong>HERMANOS</strong> se aplica automáticamente según la
+  cantidad de integrantes de la familia.
+  Los demás beneficios se asignarán explícitamente al alumno y
+  no serán acumulables con el descuento por hermanos.
+</div>
+
+<form method="get" class="row g-2 align-items-end mb-4">
+  <div class="col-md-4">
+    <label class="form-label" for="q">Buscar</label>
+    <input
+      class="form-control"
+      id="q"
+      name="q"
+      value="{{ q }}"
+      placeholder="Código o nombre"
+    >
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label" for="tipo">Tipo</label>
+    <select class="form-select" id="tipo" name="tipo">
+      <option value="todos">Todos</option>
+      {% for item in tipos %}
+      <option value="{{ item }}"
+              {% if tipo == item %}selected{% endif %}>
+        {{ item }}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="col-md-2">
+    <label class="form-label" for="estado">Estado</label>
+    <select class="form-select" id="estado" name="estado">
+      <option value="todos"
+              {% if estado == 'todos' %}selected{% endif %}>
+        Todos
+      </option>
+      <option value="activas"
+              {% if estado == 'activas' %}selected{% endif %}>
+        Activas
+      </option>
+      <option value="inactivas"
+              {% if estado == 'inactivas' %}selected{% endif %}>
+        Inactivas
+      </option>
+    </select>
+  </div>
+
+  <div class="col-md-auto">
+    <button class="btn btn-outline-primary" type="submit">
+      Buscar
+    </button>
+    <a class="btn btn-outline-secondary"
+       href="{{ url_for('finanzas.reglas_descuento') }}">
+      Limpiar
+    </a>
+  </div>
+</form>
+
+<div class="card shadow-sm">
+  <div class="card-body table-responsive">
+    <table class="table table-striped align-middle">
+      <thead class="table-dark">
+        <tr>
+          <th>Código</th>
+          <th>Nombre</th>
+          <th>Tipo</th>
+          <th>Descuento</th>
+          <th>Mínimo</th>
+          <th>Vigencia</th>
+          <th>Estado</th>
+          <th class="text-end">Acciones</th>
+        </tr>
+      </thead>
+
+      <tbody>
+      {% for regla in reglas %}
+        <tr>
+          <td>{{ regla.codigo }}</td>
+          <td>{{ regla.nombre }}</td>
+          <td>
+            <span class="badge bg-secondary">
+              {{ regla.tipo }}
+            </span>
+          </td>
+
+          <td>
+            {% if regla.porcentaje is not none %}
+              {{ regla.porcentaje }}%
+            {% else %}
+              ${{ regla.valor_fijo }}
+            {% endif %}
+          </td>
+
+          <td>
+            {{ regla.cantidad_minima
+               if regla.cantidad_minima is not none
+               else "-" }}
+          </td>
+
+          <td>
+            {{ regla.vigencia_desde.strftime('%d/%m/%Y')
+               if regla.vigencia_desde else 'Sin inicio' }}
+            —
+            {{ regla.vigencia_hasta.strftime('%d/%m/%Y')
+               if regla.vigencia_hasta else 'Sin fin' }}
+          </td>
+
+          <td>
+            <span class="badge {{ 'bg-success' if regla.activo else 'bg-secondary' }}">
+              {{ 'ACTIVA' if regla.activo else 'INACTIVA' }}
+            </span>
+          </td>
+
+          <td class="text-end">
+            <a class="btn btn-outline-primary btn-sm"
+               href="{{ url_for(
+                   'finanzas.editar_regla_descuento',
+                   regla_id=regla.id
+               ) }}">
+              Editar
+            </a>
+
+            <form
+              class="d-inline"
+              method="post"
+              action="{{ url_for(
+                  'finanzas.alternar_regla_descuento_activa',
+                  regla_id=regla.id
+              ) }}"
+            >
+              <input type="hidden"
+                     name="csrf_token"
+                     value="{{ csrf_token() }}">
+
+              <button class="btn btn-outline-secondary btn-sm">
+                {{ 'Desactivar' if regla.activo else 'Activar' }}
+              </button>
+            </form>
+          </td>
+        </tr>
+
+      {% else %}
+        <tr>
+          <td colspan="8" class="text-center text-muted">
+            No hay reglas de descuento configuradas.
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

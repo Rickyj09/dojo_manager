@@ -195,6 +195,20 @@
               <i class="bi bi-tags me-2"></i> Tarifarios
             </a>
           </li>
+                    <li class="nav-item">
+            <a class="nav-link text-white-50
+               {% if ep in [
+                 'finanzas.reglas_descuento',
+                 'finanzas.nueva_regla_descuento',
+                 'finanzas.editar_regla_descuento',
+                 'finanzas.alternar_regla_descuento_activa'
+               ] %}active{% endif %}"
+               href="{{ url_for('finanzas.reglas_descuento') }}">
+              <i class="bi bi-percent me-2"></i>
+              Reglas de descuento
+            </a>
+          </li>
+
           {% endif %}
         </ul>
       </div>

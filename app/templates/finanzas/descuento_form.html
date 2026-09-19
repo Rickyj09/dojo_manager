@@ -1,0 +1,179 @@
+{% extends "base_admin.html" %}
+{% block title %}
+{{ 'Editar' if regla else 'Nueva' }} regla de descuento
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h3 class="mb-1">
+      {{ 'Editar regla' if regla else 'Nueva regla de descuento' }}
+    </h3>
+    <p class="text-muted mb-0">
+      Configure el beneficio sin modificar el tarifario base.
+    </p>
+  </div>
+
+  <a class="btn btn-outline-secondary"
+     href="{{ url_for('finanzas.reglas_descuento') }}">
+    Volver
+  </a>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" class="row g-3">
+      <input type="hidden"
+             name="csrf_token"
+             value="{{ csrf_token() }}">
+
+      <div class="col-md-4">
+        <label class="form-label">Código</label>
+
+        {% if regla %}
+        <input class="form-control"
+               value="{{ regla.codigo }}"
+               readonly>
+        <div class="form-text">
+          El código no cambia después de crear la regla.
+        </div>
+        {% else %}
+        <input class="form-control"
+               name="codigo"
+               maxlength="50"
+               value="{{ form.codigo }}"
+               required>
+        {% endif %}
+      </div>
+
+      <div class="col-md-5">
+        <label class="form-label">Nombre</label>
+        <input class="form-control"
+               name="nombre"
+               maxlength="120"
+               value="{{ form.nombre }}"
+               required>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">Tipo</label>
+        <select class="form-select" name="tipo" required>
+          {% for item in tipos %}
+          <option value="{{ item }}"
+                  {% if form.tipo == item %}selected{% endif %}>
+            {{ item }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">
+          Porcentaje
+        </label>
+        <div class="input-group">
+          <input class="form-control"
+                 name="porcentaje"
+                 type="number"
+                 min="0"
+                 max="100"
+                 step="0.01"
+                 value="{{ form.porcentaje }}">
+          <span class="input-group-text">%</span>
+        </div>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">
+          Valor fijo
+        </label>
+        <div class="input-group">
+          <span class="input-group-text">$</span>
+          <input class="form-control"
+                 name="valor_fijo"
+                 type="number"
+                 min="0"
+                 step="0.01"
+                 value="{{ form.valor_fijo }}">
+        </div>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">
+          Cantidad mínima
+        </label>
+        <input class="form-control"
+               name="cantidad_minima"
+               type="number"
+               min="0"
+               value="{{ form.cantidad_minima }}">
+        <div class="form-text">
+          Obligatoria para HERMANOS. Mínimo 2.
+        </div>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">
+          Decimales de redondeo
+        </label>
+        <input class="form-control"
+               name="decimales_redondeo"
+               type="number"
+               min="0"
+               max="4"
+               value="{{ form.decimales_redondeo }}">
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">
+          Vigencia desde
+        </label>
+        <input class="form-control"
+               name="vigencia_desde"
+               type="date"
+               value="{{ form.vigencia_desde }}">
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">
+          Vigencia hasta
+        </label>
+        <input class="form-control"
+               name="vigencia_hasta"
+               type="date"
+               value="{{ form.vigencia_hasta }}">
+      </div>
+
+      <div class="col-md-6 d-flex align-items-end">
+        <div class="form-check mb-2">
+          <input
+            class="form-check-input"
+            type="checkbox"
+            name="requiere_autorizacion"
+            value="1"
+            id="requiere_autorizacion"
+            {% if form.requiere_autorizacion %}checked{% endif %}
+          >
+          <label class="form-check-label"
+                 for="requiere_autorizacion">
+            Requiere autorización
+          </label>
+        </div>
+      </div>
+
+      <div class="col-12">
+        <div class="alert alert-secondary mb-0">
+          Ingrese <strong>porcentaje o valor fijo</strong>,
+          nunca ambos. Los beneficios no serán acumulables en V1.
+        </div>
+      </div>
+
+      <div class="col-12">
+        <button class="btn btn-primary" type="submit">
+          Guardar
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -13,8 +13,14 @@ from app.models.finanzas import (
     FrecuenciaEntrenamiento,
     GrupoFamiliar,
     PlanFinanciero,
+    ReglaDescuento,
     TarifaPlan,
     Tarifario,
+)
+from app.services.finanzas.descuentos import (
+    TIPOS_REGLA_DESCUENTO,
+    alternar_regla_descuento,
+    guardar_regla_descuento,
 )
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import joinedload
@@ -227,6 +233,20 @@ def _parse_fecha_familia(value: str, campo: str) -> date:
         return date.fromisoformat((value or "").strip())
     except ValueError:
         raise FinanzasError(f"La {campo} no es válida")
+
+def _regla_descuento_de_academia(
+    academia_id: int,
+    regla_id: int,
+):
+    regla = ReglaDescuento.query.filter_by(
+        id=regla_id,
+        academia_id=academia_id,
+    ).first()
+
+    if regla is None:
+        abort(404)
+
+    return regla
 
 
 @finanzas_bp.route("/generar-obligaciones", methods=["GET", "POST"])
@@ -798,6 +818,248 @@ def alternar_familia_activa(grupo_familiar_id):
             grupo_familiar_id=familia.id,
         )
     )
+
+@finanzas_bp.route("/descuentos")
+@login_required
+def reglas_descuento():
+    if not _puede_configurar_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+
+    q = (request.args.get("q") or "").strip()
+    tipo = (request.args.get("tipo") or "todos").strip().upper()
+    estado = (request.args.get("estado") or "todos").strip()
+
+    query = ReglaDescuento.query.filter(
+        ReglaDescuento.academia_id == academia_id,
+    )
+
+    if q:
+        patron = f"%{q}%"
+        query = query.filter(
+            or_(
+                ReglaDescuento.codigo.ilike(patron),
+                ReglaDescuento.nombre.ilike(patron),
+            )
+        )
+
+    if tipo in TIPOS_REGLA_DESCUENTO:
+        query = query.filter(
+            ReglaDescuento.tipo == tipo,
+        )
+    else:
+        tipo = "todos"
+
+    if estado == "activas":
+        query = query.filter(
+            ReglaDescuento.activo.is_(True)
+        )
+    elif estado == "inactivas":
+        query = query.filter(
+            ReglaDescuento.activo.is_(False)
+        )
+    else:
+        estado = "todos"
+
+    reglas = query.order_by(
+        ReglaDescuento.tipo,
+        ReglaDescuento.codigo,
+        ReglaDescuento.id,
+    ).all()
+
+    return render_template(
+        "finanzas/descuentos.html",
+        reglas=reglas,
+        tipos=TIPOS_REGLA_DESCUENTO,
+        q=q,
+        tipo=tipo,
+        estado=estado,
+    )
+
+
+def _formulario_regla_descuento(
+    academia_id,
+    regla=None,
+):
+    campos = (
+        "codigo",
+        "nombre",
+        "tipo",
+        "porcentaje",
+        "valor_fijo",
+        "cantidad_minima",
+        "decimales_redondeo",
+        "vigencia_desde",
+        "vigencia_hasta",
+        "requiere_autorizacion",
+    )
+
+    if request.method == "POST":
+        form = {
+            campo: request.form.get(campo, "")
+            for campo in campos
+        }
+
+        form["requiere_autorizacion"] = (
+            request.form.get("requiere_autorizacion") == "1"
+        )
+
+        try:
+            guardada = guardar_regla_descuento(
+                academia_id=academia_id,
+                datos=form,
+                regla=regla,
+            )
+            db.session.commit()
+
+        except (FinanzasError, ValueError, IntegrityError) as exc:
+            db.session.rollback()
+
+            if isinstance(exc, IntegrityError):
+                mensaje = (
+                    "Ya existe una regla con ese código "
+                    "en esta academia."
+                )
+            else:
+                mensaje = str(exc)
+
+            flash(mensaje, "danger")
+
+        else:
+            flash(
+                "Regla de descuento guardada correctamente.",
+                "success",
+            )
+            return redirect(
+                url_for("finanzas.reglas_descuento")
+            )
+
+    else:
+        form = {
+            "codigo": regla.codigo if regla else "",
+            "nombre": regla.nombre if regla else "",
+            "tipo": regla.tipo if regla else "HERMANOS",
+            "porcentaje": (
+                str(regla.porcentaje)
+                if regla and regla.porcentaje is not None
+                else ""
+            ),
+            "valor_fijo": (
+                str(regla.valor_fijo)
+                if regla and regla.valor_fijo is not None
+                else ""
+            ),
+            "cantidad_minima": (
+                str(regla.cantidad_minima)
+                if regla and regla.cantidad_minima is not None
+                else ""
+            ),
+            "decimales_redondeo": (
+                str(regla.decimales_redondeo)
+                if regla
+                else "2"
+            ),
+            "vigencia_desde": (
+                regla.vigencia_desde.isoformat()
+                if regla and regla.vigencia_desde
+                else ""
+            ),
+            "vigencia_hasta": (
+                regla.vigencia_hasta.isoformat()
+                if regla and regla.vigencia_hasta
+                else ""
+            ),
+            "requiere_autorizacion": (
+                regla.requiere_autorizacion
+                if regla
+                else False
+            ),
+        }
+
+    return render_template(
+        "finanzas/descuento_form.html",
+        regla=regla,
+        form=form,
+        tipos=TIPOS_REGLA_DESCUENTO,
+    )
+
+
+@finanzas_bp.route(
+    "/descuentos/nueva",
+    methods=["GET", "POST"],
+)
+@login_required
+def nueva_regla_descuento():
+    if not _puede_configurar_finanzas():
+        abort(403)
+
+    return _formulario_regla_descuento(
+        _academia_id_or_403()
+    )
+
+
+@finanzas_bp.route(
+    "/descuentos/<int:regla_id>/editar",
+    methods=["GET", "POST"],
+)
+@login_required
+def editar_regla_descuento(regla_id):
+    if not _puede_configurar_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+
+    regla = _regla_descuento_de_academia(
+        academia_id,
+        regla_id,
+    )
+
+    return _formulario_regla_descuento(
+        academia_id,
+        regla,
+    )
+
+
+@finanzas_bp.route(
+    "/descuentos/<int:regla_id>/alternar-activo",
+    methods=["POST"],
+)
+@login_required
+def alternar_regla_descuento_activa(regla_id):
+    if not _puede_configurar_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+
+    regla = _regla_descuento_de_academia(
+        academia_id,
+        regla_id,
+    )
+
+    try:
+        alternar_regla_descuento(
+            academia_id=academia_id,
+            regla=regla,
+        )
+        db.session.commit()
+
+    except FinanzasError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+
+    else:
+        flash(
+            "Regla activada."
+            if regla.activo
+            else "Regla desactivada.",
+            "success",
+        )
+
+    return redirect(
+        url_for("finanzas.reglas_descuento")
+    )
+
 
 @finanzas_bp.route("/tarifarios")
 @login_required
