@@ -59,6 +59,55 @@ def resolver_regla_hermanos(*, academia_id: int, cantidad_alumnos: int, fecha: d
         .first()
     )
 
+TIPOS_BENEFICIO_EXPLICITO = (
+    "BECA",
+    "CONVENIO",
+    "PROMOCION",
+    "ESPECIAL",
+    "OTRO",
+)
+
+
+def resolver_regla_descuento_explicita(
+    *,
+    academia_id: int,
+    regla_descuento_id: int,
+    fecha: date,
+):
+    regla = _validar_objeto_tenant(
+        ReglaDescuento,
+        regla_descuento_id,
+        academia_id,
+        "La regla de descuento no pertenece a la academia indicada",
+    )
+
+    if regla.tipo not in TIPOS_BENEFICIO_EXPLICITO:
+        raise FinanzasError(
+            "La regla seleccionada no es un beneficio explícito válido"
+        )
+
+    if not regla.activo:
+        raise FinanzasError(
+            "El beneficio seleccionado no está activo"
+        )
+
+    if (
+        regla.vigencia_desde is not None
+        and fecha < regla.vigencia_desde
+    ):
+        raise FinanzasError(
+            "El beneficio seleccionado todavía no está vigente"
+        )
+
+    if (
+        regla.vigencia_hasta is not None
+        and fecha > regla.vigencia_hasta
+    ):
+        raise FinanzasError(
+            "El beneficio seleccionado ya no está vigente"
+        )
+
+    return regla
 
 def _validar_objeto_tenant(model, entity_id: int, academia_id: int, mensaje: str):
     item = model.query.filter_by(id=entity_id, academia_id=academia_id).first()
@@ -131,6 +180,53 @@ def resolver_contexto_descuento_hermanos(
 
     return grupo_familiar, cantidad_familia, regla
 
+def resolver_contexto_descuento_asignacion(
+    *,
+    academia_id: int,
+    alumno_id: int,
+    fecha: date,
+    grupo_familiar_id: int | None = None,
+    regla_descuento_id: int | None = None,
+    aplicar_descuentos: bool = True,
+):
+    if not aplicar_descuentos:
+        if regla_descuento_id is not None:
+            raise FinanzasError(
+                "No puede seleccionar un beneficio con "
+                "los descuentos desactivados"
+            )
+
+        return None, 1, None
+
+    grupo_familiar, cantidad_familia, regla_hermanos = (
+        resolver_contexto_descuento_hermanos(
+            academia_id=academia_id,
+            alumno_id=alumno_id,
+            fecha=fecha,
+            grupo_familiar_id=grupo_familiar_id,
+            aplicar_descuentos=True,
+        )
+    )
+
+    if regla_descuento_id is not None:
+        regla_explicita = resolver_regla_descuento_explicita(
+            academia_id=academia_id,
+            regla_descuento_id=regla_descuento_id,
+            fecha=fecha,
+        )
+
+        return (
+            grupo_familiar,
+            cantidad_familia,
+            regla_explicita,
+        )
+
+    return (
+        grupo_familiar,
+        cantidad_familia,
+        regla_hermanos,
+    )
+
 def resolver_tarifa_asignacion(
     *,
     academia_id, plan_id, frecuencia_id, fecha_inicio,
@@ -189,11 +285,20 @@ def resolver_tarifa_asignacion(
 
 
 def asignar_plan_financiero(
-    *, academia_id: int, alumno_id: int, plan_id: int, frecuencia_id: int,
-    fecha_inicio: date, usuario_id: int | None = None,
-    tarifario_id: int | None = None, tarifa_plan_id: int | None = None,
-    grupo_familiar_id: int | None = None, motivo: str | None = None,
-    aplicar_descuentos: bool = True, asignacion_actual_id: int | None = None,
+    *,
+    academia_id: int,
+    alumno_id: int,
+    plan_id: int,
+    frecuencia_id: int,
+    fecha_inicio: date,
+    usuario_id: int | None = None,
+    tarifario_id: int | None = None,
+    tarifa_plan_id: int | None = None,
+    grupo_familiar_id: int | None = None,
+    regla_descuento_id: int | None = None,
+    motivo: str | None = None,
+    aplicar_descuentos: bool = True,
+    asignacion_actual_id: int | None = None,
 ):
     # El UPDATE sin cambio de valor serializa por alumno también en SQLite,
     # donde SELECT FOR UPDATE no bloquea. El lock dura hasta commit/rollback.
@@ -222,14 +327,15 @@ def asignar_plan_financiero(
     tarifario, plan, frecuencia = tarifa.tarifario, tarifa.plan, tarifa.frecuencia
 
     grupo_familiar, cantidad_familia, regla = (
-    resolver_contexto_descuento_hermanos(
-        academia_id=academia_id,
-        alumno_id=alumno.id,
-        fecha=fecha_inicio,
-        grupo_familiar_id=grupo_familiar_id,
-        aplicar_descuentos=aplicar_descuentos,
+        resolver_contexto_descuento_asignacion(
+            academia_id=academia_id,
+            alumno_id=alumno.id,
+            fecha=fecha_inicio,
+            grupo_familiar_id=grupo_familiar_id,
+            regla_descuento_id=regla_descuento_id,
+            aplicar_descuentos=aplicar_descuentos,
+        )
     )
-)
 
     regla_ids = [regla.id] if regla is not None else []
     resultado = calcular_tarifa(

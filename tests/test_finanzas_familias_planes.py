@@ -89,6 +89,42 @@ def crear_regla(db, academia_id, codigo, porcentaje, cantidad, decimales=0, desd
     db.session.flush()
     return regla
 
+def crear_beneficio(
+    db,
+    academia_id,
+    codigo,
+    *,
+    tipo="BECA",
+    porcentaje=None,
+    valor_fijo=None,
+    activo=True,
+    desde=None,
+    hasta=None,
+    decimales=2,
+):
+    regla = ReglaDescuento(
+        academia_id=academia_id,
+        codigo=codigo,
+        nombre=codigo,
+        tipo=tipo,
+        porcentaje=(
+            Decimal(porcentaje)
+            if porcentaje is not None
+            else None
+        ),
+        valor_fijo=(
+            Decimal(valor_fijo)
+            if valor_fijo is not None
+            else None
+        ),
+        decimales_redondeo=decimales,
+        activo=activo,
+        vigencia_desde=desde,
+        vigencia_hasta=hasta,
+    )
+    db.session.add(regla)
+    db.session.flush()
+    return regla
 
 def crear_alumno_extra(db, base_data, nombres):
     ref = base_data["alumno_a1"]
@@ -1041,3 +1077,335 @@ def test_aplicar_descuentos_false_ignora_familia_y_hermanos(
     assert asignacion.descuento_porcentaje_snapshot is None
     assert asignacion.descuento_valor_snapshot == Decimal("0.00")
     assert asignacion.valor_final_snapshot == Decimal("55.00")
+@pytest.mark.parametrize(
+    "tipo",
+    ["BECA", "CONVENIO", "PROMOCION", "ESPECIAL", "OTRO"],
+)
+def test_beneficio_explicito_porcentual_funciona_sin_familia(
+    db,
+    base_data,
+    tipo,
+):
+    academia_id, _tarifario, plan, frecuencia, _ = preparar_regular_d2(
+        db,
+        base_data,
+        "100.00",
+    )
+
+    regla = crear_beneficio(
+        db,
+        academia_id,
+        f"{tipo}_50",
+        tipo=tipo,
+        porcentaje="50.00",
+    )
+
+    asignacion = asignar_plan_financiero(
+        academia_id=academia_id,
+        alumno_id=base_data["alumno_a1"].id,
+        plan_id=plan.id,
+        frecuencia_id=frecuencia.id,
+        fecha_inicio=date(2026, 9, 1),
+        regla_descuento_id=regla.id,
+    )
+
+    assert asignacion.grupo_familiar_id is None
+    assert asignacion.regla_descuento_id == regla.id
+    assert asignacion.tarifa_base_snapshot == Decimal("100.00")
+    assert asignacion.descuento_porcentaje_snapshot == Decimal("50.00")
+    assert asignacion.descuento_valor_snapshot == Decimal("50.00")
+    assert asignacion.valor_final_snapshot == Decimal("50.00")
+
+
+def test_beca_explicita_reemplaza_descuento_hermanos(
+    db,
+    base_data,
+):
+    academia_id, _tarifario, plan, frecuencia, _ = preparar_regular_d2(
+        db,
+        base_data,
+        "100.00",
+    )
+
+    grupo = crear_grupo_familiar(
+        academia_id=academia_id,
+        codigo="FAM-D5-001",
+        nombre="Familia D5",
+    )
+
+    for alumno in (
+        base_data["alumno_a1"],
+        base_data["alumno_a2"],
+    ):
+        asignar_alumno_a_familia(
+            academia_id=academia_id,
+            alumno_id=alumno.id,
+            grupo_familiar_id=grupo.id,
+            fecha_inicio=date(2026, 9, 1),
+        )
+
+    regla_hermanos = crear_regla(
+        db,
+        academia_id,
+        "HERMANOS_2",
+        "10.00",
+        2,
+        decimales=2,
+    )
+
+    beca = crear_beneficio(
+        db,
+        academia_id,
+        "BECA_50",
+        tipo="BECA",
+        porcentaje="50.00",
+    )
+
+    asignacion = asignar_plan_financiero(
+        academia_id=academia_id,
+        alumno_id=base_data["alumno_a1"].id,
+        plan_id=plan.id,
+        frecuencia_id=frecuencia.id,
+        fecha_inicio=date(2026, 9, 1),
+        regla_descuento_id=beca.id,
+    )
+
+    assert asignacion.grupo_familiar_id == grupo.id
+    assert asignacion.regla_descuento_id == beca.id
+    assert asignacion.regla_descuento_id != regla_hermanos.id
+    assert asignacion.descuento_porcentaje_snapshot == Decimal("50.00")
+    assert asignacion.descuento_valor_snapshot == Decimal("50.00")
+    assert asignacion.valor_final_snapshot == Decimal("50.00")
+
+
+def test_beneficio_explicito_valor_fijo(
+    db,
+    base_data,
+):
+    academia_id, _tarifario, plan, frecuencia, _ = preparar_regular_d2(
+        db,
+        base_data,
+        "100.00",
+    )
+
+    regla = crear_beneficio(
+        db,
+        academia_id,
+        "CONVENIO_1250",
+        tipo="CONVENIO",
+        valor_fijo="12.50",
+    )
+
+    asignacion = asignar_plan_financiero(
+        academia_id=academia_id,
+        alumno_id=base_data["alumno_a1"].id,
+        plan_id=plan.id,
+        frecuencia_id=frecuencia.id,
+        fecha_inicio=date(2026, 9, 1),
+        regla_descuento_id=regla.id,
+    )
+
+    assert asignacion.regla_descuento_id == regla.id
+    assert asignacion.descuento_porcentaje_snapshot is None
+    assert asignacion.descuento_valor_snapshot == Decimal("12.50")
+    assert asignacion.valor_final_snapshot == Decimal("87.50")
+
+
+@pytest.mark.parametrize(
+    "activo,desde,hasta,mensaje",
+    [
+        (
+            False,
+            None,
+            None,
+            "no está activo",
+        ),
+        (
+            True,
+            date(2026, 10, 1),
+            None,
+            "todavía no está vigente",
+        ),
+        (
+            True,
+            date(2026, 1, 1),
+            date(2026, 8, 31),
+            "ya no está vigente",
+        ),
+    ],
+)
+def test_beneficio_explicito_debe_estar_activo_y_vigente(
+    db,
+    base_data,
+    activo,
+    desde,
+    hasta,
+    mensaje,
+):
+    academia_id, _tarifario, plan, frecuencia, _ = preparar_regular_d2(
+        db,
+        base_data,
+        "100.00",
+    )
+
+    regla = crear_beneficio(
+        db,
+        academia_id,
+        "BECA_CONTROL",
+        tipo="BECA",
+        porcentaje="25.00",
+        activo=activo,
+        desde=desde,
+        hasta=hasta,
+    )
+
+    with pytest.raises(FinanzasError, match=mensaje):
+        asignar_plan_financiero(
+            academia_id=academia_id,
+            alumno_id=base_data["alumno_a1"].id,
+            plan_id=plan.id,
+            frecuencia_id=frecuencia.id,
+            fecha_inicio=date(2026, 9, 1),
+            regla_descuento_id=regla.id,
+        )
+
+
+def test_beneficio_explicito_de_otra_academia_es_rechazado(
+    db,
+    base_data,
+):
+    academia_id, _tarifario, plan, frecuencia, _ = preparar_regular_d2(
+        db,
+        base_data,
+        "100.00",
+    )
+
+    regla_ajena = crear_beneficio(
+        db,
+        base_data["academia_b"].id,
+        "BECA_AJENA",
+        tipo="BECA",
+        porcentaje="50.00",
+    )
+
+    with pytest.raises(
+        FinanzasError,
+        match="no pertenece a la academia",
+    ):
+        asignar_plan_financiero(
+            academia_id=academia_id,
+            alumno_id=base_data["alumno_a1"].id,
+            plan_id=plan.id,
+            frecuencia_id=frecuencia.id,
+            fecha_inicio=date(2026, 9, 1),
+            regla_descuento_id=regla_ajena.id,
+        )
+
+
+def test_regla_hermanos_no_puede_seleccionarse_como_beneficio_explicito(
+    db,
+    base_data,
+):
+    academia_id, _tarifario, plan, frecuencia, _ = preparar_regular_d2(
+        db,
+        base_data,
+        "100.00",
+    )
+
+    regla = crear_regla(
+        db,
+        academia_id,
+        "HERMANOS_2",
+        "10.00",
+        2,
+        decimales=2,
+    )
+
+    with pytest.raises(
+        FinanzasError,
+        match="beneficio explícito válido",
+    ):
+        asignar_plan_financiero(
+            academia_id=academia_id,
+            alumno_id=base_data["alumno_a1"].id,
+            plan_id=plan.id,
+            frecuencia_id=frecuencia.id,
+            fecha_inicio=date(2026, 9, 1),
+            regla_descuento_id=regla.id,
+        )
+
+
+def test_no_permite_beneficio_explicito_con_descuentos_desactivados(
+    db,
+    base_data,
+):
+    academia_id, _tarifario, plan, frecuencia, _ = preparar_regular_d2(
+        db,
+        base_data,
+        "100.00",
+    )
+
+    regla = crear_beneficio(
+        db,
+        academia_id,
+        "BECA_20",
+        tipo="BECA",
+        porcentaje="20.00",
+    )
+
+    with pytest.raises(
+        FinanzasError,
+        match="descuentos desactivados",
+    ):
+        asignar_plan_financiero(
+            academia_id=academia_id,
+            alumno_id=base_data["alumno_a1"].id,
+            plan_id=plan.id,
+            frecuencia_id=frecuencia.id,
+            fecha_inicio=date(2026, 9, 1),
+            regla_descuento_id=regla.id,
+            aplicar_descuentos=False,
+        )
+
+
+def test_cambio_de_beneficio_no_altera_snapshot_historico(
+    db,
+    base_data,
+):
+    academia_id, _tarifario, plan, frecuencia, _ = preparar_regular_d2(
+        db,
+        base_data,
+        "100.00",
+    )
+
+    regla = crear_beneficio(
+        db,
+        academia_id,
+        "BECA_20",
+        tipo="BECA",
+        porcentaje="20.00",
+    )
+
+    asignacion = asignar_plan_financiero(
+        academia_id=academia_id,
+        alumno_id=base_data["alumno_a1"].id,
+        plan_id=plan.id,
+        frecuencia_id=frecuencia.id,
+        fecha_inicio=date(2026, 9, 1),
+        regla_descuento_id=regla.id,
+    )
+
+    db.session.commit()
+
+    regla.porcentaje = Decimal("50.00")
+    db.session.commit()
+
+    guardada = db.session.get(
+        AlumnoPlanFinanciero,
+        asignacion.id,
+    )
+
+    assert guardada.regla_descuento_id == regla.id
+    assert guardada.descuento_porcentaje_snapshot == Decimal("20.00")
+    assert guardada.descuento_valor_snapshot == Decimal("20.00")
+    assert guardada.valor_final_snapshot == Decimal("80.00")
