@@ -67,6 +67,70 @@ def _validar_objeto_tenant(model, entity_id: int, academia_id: int, mensaje: str
     return item
 
 
+def resolver_contexto_descuento_hermanos(
+    *,
+    academia_id: int,
+    alumno_id: int,
+    fecha: date,
+    grupo_familiar_id: int | None = None,
+    aplicar_descuentos: bool = True,
+):
+    if not aplicar_descuentos:
+        return None, 1, None
+
+    alumno = _validar_objeto_tenant(
+        Alumno,
+        alumno_id,
+        academia_id,
+        "Alumno no pertenece a la academia indicada",
+    )
+
+    if grupo_familiar_id is not None:
+        grupo_familiar = _validar_objeto_tenant(
+            GrupoFamiliar,
+            grupo_familiar_id,
+            academia_id,
+            "Grupo familiar no pertenece a la academia indicada",
+        )
+
+        familia_activa = obtener_familia_activa_del_alumno(
+            academia_id=academia_id,
+            alumno_id=alumno.id,
+            fecha_referencia=fecha,
+        )
+
+        if (
+            familia_activa is None
+            or familia_activa.id != grupo_familiar.id
+        ):
+            raise FinanzasError(
+                "El alumno no pertenece a la familia indicada"
+            )
+
+    else:
+        grupo_familiar = obtener_familia_activa_del_alumno(
+            academia_id=academia_id,
+            alumno_id=alumno.id,
+            fecha_referencia=fecha,
+        )
+
+    cantidad_familia = 1
+
+    if grupo_familiar is not None:
+        cantidad_familia = contar_alumnos_activos_de_familia(
+            academia_id=academia_id,
+            grupo_familiar_id=grupo_familiar.id,
+            fecha_referencia=fecha,
+        )
+
+    regla = resolver_regla_hermanos(
+        academia_id=academia_id,
+        cantidad_alumnos=cantidad_familia,
+        fecha=fecha,
+    )
+
+    return grupo_familiar, cantidad_familia, regla
+
 def resolver_tarifa_asignacion(
     *,
     academia_id, plan_id, frecuencia_id, fecha_inicio,
@@ -157,56 +221,17 @@ def asignar_plan_financiero(
     )
     tarifario, plan, frecuencia = tarifa.tarifario, tarifa.plan, tarifa.frecuencia
 
-    if not aplicar_descuentos:
-        grupo_familiar = None
-
-    elif grupo_familiar_id is not None:
-        grupo_familiar = _validar_objeto_tenant(
-            GrupoFamiliar,
-            grupo_familiar_id,
-            academia_id,
-            "Grupo familiar no pertenece a la academia indicada",
-        )
-
-        familia_activa = obtener_familia_activa_del_alumno(
-            academia_id=academia_id,
-            alumno_id=alumno.id,
-            fecha_referencia=fecha_inicio,
-        )
-
-        if familia_activa is None or familia_activa.id != grupo_familiar.id:
-            raise FinanzasError(
-                "El alumno no pertenece a la familia indicada"
-            )
-
-    else:
-        grupo_familiar = obtener_familia_activa_del_alumno(
-            academia_id=academia_id,
-            alumno_id=alumno.id,
-            fecha_referencia=fecha_inicio,
-        )
-
-    cantidad_familia = 1
-
-    if grupo_familiar is not None:
-        cantidad_familia = contar_alumnos_activos_de_familia(
-            academia_id=academia_id,
-            grupo_familiar_id=grupo_familiar.id,
-            fecha_referencia=fecha_inicio,
-        )
-
-    regla = (
-        resolver_regla_hermanos(
-            academia_id=academia_id,
-            cantidad_alumnos=cantidad_familia,
-            fecha=fecha_inicio,
-        )
-        if aplicar_descuentos
-        else None
+    grupo_familiar, cantidad_familia, regla = (
+    resolver_contexto_descuento_hermanos(
+        academia_id=academia_id,
+        alumno_id=alumno.id,
+        fecha=fecha_inicio,
+        grupo_familiar_id=grupo_familiar_id,
+        aplicar_descuentos=aplicar_descuentos,
     )
+)
 
     regla_ids = [regla.id] if regla is not None else []
-
     resultado = calcular_tarifa(
         academia_id=academia_id,
         tarifario_id=tarifario.id,

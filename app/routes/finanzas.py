@@ -52,7 +52,11 @@ from app.services.finanzas.familias import (
 from app.services.finanzas.obligaciones import (
     generar_obligaciones_mensuales, previsualizar_obligaciones_mensuales, parsear_periodo,
 )
-from app.services.finanzas.asignaciones import asignar_plan_financiero, resolver_tarifa_asignacion
+from app.services.finanzas.asignaciones import (
+    asignar_plan_financiero,
+    resolver_contexto_descuento_hermanos,
+    resolver_tarifa_asignacion,
+)
 from app.services.finanzas.tarifas import calcular_tarifa
 from app.services.finanzas.tarifarios import (
     ESTADOS_TARIFARIO, alternar_tarifa, guardar_tarifa, guardar_tarifario, tarifas_editables,
@@ -345,6 +349,9 @@ def configuracion_alumno(alumno_id):
         "asignacion_actual_id": datos.get("asignacion_actual_id", str(actual.id) if actual else "0"),
     }
     tarifa = resultado = None
+    familia_descuento = None
+    regla_descuento = None
+    cantidad_familia = 1
     error = None
     if datos or (form["plan_id"] and form["frecuencia_id"]):
         try:
@@ -360,33 +367,93 @@ def configuracion_alumno(alumno_id):
             tarifa = resolver_tarifa_asignacion(
                 academia_id=academia_id, plan_id=plan_id, frecuencia_id=frecuencia_id, fecha_inicio=fecha,
             )
-            resultado = calcular_tarifa(
-                academia_id=academia_id, plan_id=plan_id, frecuencia_id=frecuencia_id,
-                tarifario_id=tarifa.tarifario_id, contexto_descuentos={"fecha": fecha}, aplicar_descuentos=False,
-            )
-            if request.method == "POST" and datos.get("accion") != "consultar":
-                try:
-                    esperada = int(request.form["asignacion_actual_id"])
-                except (KeyError, ValueError):
-                    raise FinanzasError("Vuelva a abrir el formulario antes de guardar la configuración.")
-                asignar_plan_financiero(
-                    academia_id=academia_id, alumno_id=alumno.id, plan_id=plan_id,
-                    frecuencia_id=frecuencia_id, fecha_inicio=fecha, usuario_id=current_user.id,
-                    aplicar_descuentos=False, asignacion_actual_id=esperada,
+            familia_descuento, cantidad_familia, regla_descuento = (
+                resolver_contexto_descuento_hermanos(
+                    academia_id=academia_id,
+                    alumno_id=alumno.id,
+                    fecha=fecha,
                 )
+            )
+
+            regla_ids = (
+                [regla_descuento.id]
+                if regla_descuento is not None
+                else []
+            )
+
+            resultado = calcular_tarifa(
+                academia_id=academia_id,
+                plan_id=plan_id,
+                frecuencia_id=frecuencia_id,
+                tarifario_id=tarifa.tarifario_id,
+                contexto_descuentos={
+                    "reglas_descuento_ids": regla_ids,
+                    "cantidad_alumnos": cantidad_familia,
+                    "fecha": fecha,
+                },
+                aplicar_descuentos=True,
+            )
+
+            if (
+                request.method == "POST"
+                and datos.get("accion") != "consultar"
+            ):
+                try:
+                    esperada = int(
+                        request.form["asignacion_actual_id"]
+                    )
+                except (KeyError, ValueError):
+                    raise FinanzasError(
+                        "Vuelva a abrir el formulario antes de "
+                        "guardar la configuración."
+                    )
+
+                asignar_plan_financiero(
+                    academia_id=academia_id,
+                    alumno_id=alumno.id,
+                    plan_id=plan_id,
+                    frecuencia_id=frecuencia_id,
+                    fecha_inicio=fecha,
+                    usuario_id=current_user.id,
+                    aplicar_descuentos=True,
+                    asignacion_actual_id=esperada,
+                )
+
                 db.session.commit()
-                flash("Configuración financiera guardada correctamente.", "success")
-                return redirect(url_for("finanzas.configuracion_alumno", alumno_id=alumno.id))
+
+                flash(
+                    "Configuración financiera guardada correctamente.",
+                    "success",
+                )
+
+                return redirect(
+                    url_for(
+                        "finanzas.configuracion_alumno",
+                        alumno_id=alumno.id,
+                    )
+                )
         except (FinanzasError, IntegrityError) as exc:
             db.session.rollback()
             error = str(exc).removeprefix("Tarifa/configuracion no disponible. ") if isinstance(exc, FinanzasError) else "No se pudo guardar la configuración. Vuelva a abrir el formulario."
     planes = PlanFinanciero.query.filter_by(academia_id=academia_id, activo=True).order_by(PlanFinanciero.orden, PlanFinanciero.nombre).all()
     frecuencias = FrecuenciaEntrenamiento.query.filter_by(academia_id=academia_id, activo=True).order_by(FrecuenciaEntrenamiento.nombre).all()
     return render_template(
-        "finanzas/asignacion_form.html", alumno=alumno, asignacion_financiera=actual, historial=historial,
-        form=form, planes=planes, frecuencias=frecuencias, tarifa=tarifa, resultado=resultado, error=error,
-        puede_escribir_finanzas=_puede_escribir_finanzas(), ver_finanzas=True,
-    )
+    "finanzas/asignacion_form.html",
+    alumno=alumno,
+    asignacion_financiera=actual,
+    historial=historial,
+    form=form,
+    planes=planes,
+    frecuencias=frecuencias,
+    tarifa=tarifa,
+    resultado=resultado,
+    familia_descuento=familia_descuento,
+    cantidad_familia=cantidad_familia,
+    regla_descuento=regla_descuento,
+    error=error,
+    puede_escribir_finanzas=_puede_escribir_finanzas(),
+    ver_finanzas=True,
+)
 
 
 @finanzas_bp.route("/familias")

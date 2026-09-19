@@ -777,3 +777,267 @@ def test_asignar_plan_usa_composicion_familiar_de_fecha_inicio(db, base_data):
     assert asignacion.descuento_porcentaje_snapshot == Decimal("10.00")
     assert asignacion.descuento_valor_snapshot == Decimal("5.00")
     assert asignacion.valor_final_snapshot == Decimal("50.00")
+
+def test_nueva_asignacion_recalcula_descuento_al_entrar_tercer_hermano(
+    db,
+    base_data,
+):
+    academia_id, _tarifario, plan, frecuencia, _ = preparar_regular_d2(
+        db,
+        base_data,
+    )
+
+    grupo = crear_grupo_familiar(
+        academia_id=academia_id,
+        codigo="FAM-D4-001",
+        nombre="Familia D4",
+    )
+
+    alumno_1 = base_data["alumno_a1"]
+    alumno_2 = base_data["alumno_a2"]
+    alumno_3 = crear_alumno_extra(
+        db,
+        base_data,
+        "Tercer Hermano",
+    )
+
+    for alumno in (alumno_1, alumno_2):
+        asignar_alumno_a_familia(
+            academia_id=academia_id,
+            alumno_id=alumno.id,
+            grupo_familiar_id=grupo.id,
+            fecha_inicio=date(2026, 9, 1),
+        )
+
+    regla_2 = crear_regla(
+        db,
+        academia_id,
+        "HERMANOS_2",
+        "10.00",
+        2,
+        decimales=0,
+    )
+
+    regla_3 = crear_regla(
+        db,
+        academia_id,
+        "HERMANOS_3",
+        "15.00",
+        3,
+        decimales=0,
+    )
+
+    primera = asignar_plan_financiero(
+        academia_id=academia_id,
+        alumno_id=alumno_1.id,
+        plan_id=plan.id,
+        frecuencia_id=frecuencia.id,
+        fecha_inicio=date(2026, 9, 1),
+    )
+
+    assert primera.regla_descuento_id == regla_2.id
+    assert primera.descuento_porcentaje_snapshot == Decimal("10.00")
+    assert primera.valor_final_snapshot == Decimal("50.00")
+
+    asignar_alumno_a_familia(
+        academia_id=academia_id,
+        alumno_id=alumno_3.id,
+        grupo_familiar_id=grupo.id,
+        fecha_inicio=date(2026, 9, 15),
+    )
+
+    segunda = asignar_plan_financiero(
+        academia_id=academia_id,
+        alumno_id=alumno_1.id,
+        plan_id=plan.id,
+        frecuencia_id=frecuencia.id,
+        fecha_inicio=date(2026, 10, 1),
+    )
+
+    db.session.commit()
+
+    assert primera.estado == "FINALIZADO"
+    assert primera.fecha_fin == date(2026, 9, 30)
+
+    assert primera.regla_descuento_id == regla_2.id
+    assert primera.descuento_porcentaje_snapshot == Decimal("10.00")
+    assert primera.valor_final_snapshot == Decimal("50.00")
+
+    assert segunda.estado == "ACTIVO"
+    assert segunda.regla_descuento_id == regla_3.id
+    assert segunda.descuento_porcentaje_snapshot == Decimal("15.00")
+    assert segunda.valor_final_snapshot == Decimal("47.00")
+
+
+def test_nueva_asignacion_elimina_descuento_si_queda_un_solo_hermano(
+    db,
+    base_data,
+):
+    academia_id, _tarifario, plan, frecuencia, _ = preparar_regular_d2(
+        db,
+        base_data,
+    )
+
+    grupo = crear_grupo_familiar(
+        academia_id=academia_id,
+        codigo="FAM-D4-002",
+        nombre="Familia D4 retiro",
+    )
+
+    alumno_1 = base_data["alumno_a1"]
+    alumno_2 = base_data["alumno_a2"]
+
+    for alumno in (alumno_1, alumno_2):
+        asignar_alumno_a_familia(
+            academia_id=academia_id,
+            alumno_id=alumno.id,
+            grupo_familiar_id=grupo.id,
+            fecha_inicio=date(2026, 9, 1),
+        )
+
+    regla = crear_regla(
+        db,
+        academia_id,
+        "HERMANOS_2",
+        "10.00",
+        2,
+        decimales=0,
+    )
+
+    primera = asignar_plan_financiero(
+        academia_id=academia_id,
+        alumno_id=alumno_1.id,
+        plan_id=plan.id,
+        frecuencia_id=frecuencia.id,
+        fecha_inicio=date(2026, 9, 1),
+    )
+
+    retirar_alumno_de_familia(
+        academia_id=academia_id,
+        alumno_id=alumno_2.id,
+        grupo_familiar_id=grupo.id,
+        fecha_fin=date(2026, 9, 30),
+    )
+
+    segunda = asignar_plan_financiero(
+        academia_id=academia_id,
+        alumno_id=alumno_1.id,
+        plan_id=plan.id,
+        frecuencia_id=frecuencia.id,
+        fecha_inicio=date(2026, 10, 1),
+    )
+
+    db.session.commit()
+
+    assert primera.estado == "FINALIZADO"
+    assert primera.regla_descuento_id == regla.id
+    assert primera.descuento_porcentaje_snapshot == Decimal("10.00")
+    assert primera.valor_final_snapshot == Decimal("50.00")
+
+    assert segunda.estado == "ACTIVO"
+    assert segunda.grupo_familiar_id == grupo.id
+    assert segunda.regla_descuento_id is None
+    assert segunda.descuento_porcentaje_snapshot is None
+    assert segunda.descuento_valor_snapshot == Decimal("0.00")
+    assert segunda.valor_final_snapshot == Decimal("55.00")
+
+
+def test_regla_hermanos_inactiva_no_aplica_en_asignacion(
+    db,
+    base_data,
+):
+    academia_id, _tarifario, plan, frecuencia, _ = preparar_regular_d2(
+        db,
+        base_data,
+    )
+
+    grupo = crear_grupo_familiar(
+        academia_id=academia_id,
+        codigo="FAM-D4-003",
+        nombre="Familia D4 inactiva",
+    )
+
+    for alumno in (
+        base_data["alumno_a1"],
+        base_data["alumno_a2"],
+    ):
+        asignar_alumno_a_familia(
+            academia_id=academia_id,
+            alumno_id=alumno.id,
+            grupo_familiar_id=grupo.id,
+            fecha_inicio=date(2026, 9, 1),
+        )
+
+    regla = crear_regla(
+        db,
+        academia_id,
+        "HERMANOS_2",
+        "10.00",
+        2,
+        decimales=0,
+    )
+    regla.activo = False
+
+    asignacion = asignar_plan_financiero(
+        academia_id=academia_id,
+        alumno_id=base_data["alumno_a1"].id,
+        plan_id=plan.id,
+        frecuencia_id=frecuencia.id,
+        fecha_inicio=date(2026, 9, 1),
+    )
+
+    assert asignacion.grupo_familiar_id == grupo.id
+    assert asignacion.regla_descuento_id is None
+    assert asignacion.descuento_valor_snapshot == Decimal("0.00")
+    assert asignacion.valor_final_snapshot == Decimal("55.00")
+
+
+def test_aplicar_descuentos_false_ignora_familia_y_hermanos(
+    db,
+    base_data,
+):
+    academia_id, _tarifario, plan, frecuencia, _ = preparar_regular_d2(
+        db,
+        base_data,
+    )
+
+    grupo = crear_grupo_familiar(
+        academia_id=academia_id,
+        codigo="FAM-D4-004",
+        nombre="Familia D4 sin descuento",
+    )
+
+    for alumno in (
+        base_data["alumno_a1"],
+        base_data["alumno_a2"],
+    ):
+        asignar_alumno_a_familia(
+            academia_id=academia_id,
+            alumno_id=alumno.id,
+            grupo_familiar_id=grupo.id,
+            fecha_inicio=date(2026, 9, 1),
+        )
+
+    crear_regla(
+        db,
+        academia_id,
+        "HERMANOS_2",
+        "10.00",
+        2,
+        decimales=0,
+    )
+
+    asignacion = asignar_plan_financiero(
+        academia_id=academia_id,
+        alumno_id=base_data["alumno_a1"].id,
+        plan_id=plan.id,
+        frecuencia_id=frecuencia.id,
+        fecha_inicio=date(2026, 9, 1),
+        aplicar_descuentos=False,
+    )
+
+    assert asignacion.grupo_familiar_id is None
+    assert asignacion.regla_descuento_id is None
+    assert asignacion.descuento_porcentaje_snapshot is None
+    assert asignacion.descuento_valor_snapshot == Decimal("0.00")
+    assert asignacion.valor_final_snapshot == Decimal("55.00")

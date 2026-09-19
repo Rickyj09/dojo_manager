@@ -12,7 +12,10 @@ from app.models.sucursal import Sucursal
 from app.services.finanzas.asignaciones import asignar_plan_financiero
 from app.services.finanzas.obligaciones import generar_obligaciones_mensuales
 from test_finanzas_tarifarios_ui import catalogo, cliente  # Fixtures/helpers de Fase A.
-
+from app.services.finanzas.familias import (
+    asignar_alumno_a_familia,
+    crear_grupo_familiar,
+)
 
 def url(base_data, alumno="alumno_a1"):
     return f"/finanzas/alumnos/{base_data[alumno].id}/configuracion"
@@ -319,3 +322,138 @@ def test_dos_guardados_concurrentes_solo_crean_una_asignacion(app, db, base_data
         db.session.remove()
         db.engines[None] = original
         temporal.dispose()
+def test_ui_aplica_automaticamente_descuento_hermanos(
+    app,
+    db,
+    base_data,
+    catalogo,
+):
+    academia_id = base_data["academia_a"].id
+
+    familia = crear_grupo_familiar(
+        academia_id=academia_id,
+        codigo="FAM-UI-D4",
+        nombre="Familia UI D4",
+    )
+
+    for alumno in (
+        base_data["alumno_a1"],
+        base_data["alumno_a2"],
+    ):
+        asignar_alumno_a_familia(
+            academia_id=academia_id,
+            alumno_id=alumno.id,
+            grupo_familiar_id=familia.id,
+            fecha_inicio=date.today(),
+        )
+
+    regla = ReglaDescuento(
+        academia_id=academia_id,
+        codigo="HERMANOS_2",
+        nombre="Hermanos 2",
+        tipo="HERMANOS",
+        porcentaje=Decimal("10.00"),
+        cantidad_minima=2,
+        decimales_redondeo=2,
+        activo=True,
+    )
+
+    db.session.add(regla)
+    db.session.commit()
+
+    client = cliente(app, base_data["admin_a"])
+
+    consulta = client.post(
+        url(base_data),
+        data=datos(
+            catalogo,
+            accion="consultar",
+        ),
+    )
+    texto = " ".join(consulta.text.split())
+
+    assert consulta.status_code == 200
+    assert "Familia UI D4" in texto
+    assert "HERMANOS_2" in texto
+    assert "10.00%" in texto
+    assert "USD 45.00" in texto
+    assert AlumnoPlanFinanciero.query.count() == 0
+
+    response = client.post(
+        url(base_data),
+        data=datos(catalogo),
+    )
+
+    assert response.status_code == 302
+
+    asignacion = AlumnoPlanFinanciero.query.one()
+
+    assert asignacion.grupo_familiar_id == familia.id
+    assert asignacion.regla_descuento_id == regla.id
+    assert (
+        asignacion.tarifa_base_snapshot
+        == Decimal("50.00")
+    )
+    assert (
+        asignacion.descuento_porcentaje_snapshot
+        == Decimal("10.00")
+    )
+    assert (
+        asignacion.descuento_valor_snapshot
+        == Decimal("5.00")
+    )
+    assert (
+        asignacion.valor_final_snapshot
+        == Decimal("45.00")
+    )
+
+
+def test_ui_un_integrante_no_recibe_descuento_hermanos(
+    app,
+    db,
+    base_data,
+    catalogo,
+):
+    academia_id = base_data["academia_a"].id
+
+    familia = crear_grupo_familiar(
+        academia_id=academia_id,
+        codigo="FAM-UI-UNO",
+        nombre="Familia un integrante",
+    )
+
+    asignar_alumno_a_familia(
+        academia_id=academia_id,
+        alumno_id=base_data["alumno_a1"].id,
+        grupo_familiar_id=familia.id,
+        fecha_inicio=date.today(),
+    )
+
+    db.session.add(
+        ReglaDescuento(
+            academia_id=academia_id,
+            codigo="HERMANOS_2",
+            nombre="Hermanos 2",
+            tipo="HERMANOS",
+            porcentaje=Decimal("10.00"),
+            cantidad_minima=2,
+            activo=True,
+        )
+    )
+    db.session.commit()
+
+    client = cliente(app, base_data["admin_a"])
+
+    response = client.post(
+        url(base_data),
+        data=datos(catalogo),
+    )
+
+    assert response.status_code == 302
+
+    asignacion = AlumnoPlanFinanciero.query.one()
+
+    assert asignacion.grupo_familiar_id == familia.id
+    assert asignacion.regla_descuento_id is None
+    assert asignacion.descuento_valor_snapshot == Decimal("0.00")
+    assert asignacion.valor_final_snapshot == Decimal("50.00")

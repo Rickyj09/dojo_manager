@@ -20,6 +20,97 @@
     <div class="col-md-6"><label for="frecuencia_id" class="form-label">Frecuencia</label><select class="form-select" name="frecuencia_id" id="frecuencia_id" required><option value="">Seleccione una frecuencia</option>{% for frecuencia in frecuencias %}<option value="{{ frecuencia.id }}" {% if form.frecuencia_id|string == frecuencia.id|string %}selected{% endif %}>{{ frecuencia.nombre }}</option>{% endfor %}</select></div>
     <div class="col-md-6"><label for="fecha_inicio" class="form-label">Fecha de inicio</label><input class="form-control" type="date" id="fecha_inicio" name="fecha_inicio" value="{{ form.fecha_inicio }}" required></div>
     <div class="col-md-6"><label for="importe" class="form-label">Tarifa encontrada (solo lectura)</label><input class="form-control" id="importe" readonly value="{% if resultado %}{{ tarifa.tarifario.moneda }} {{ '%.2f'|format(resultado.tarifa_base) }}{% endif %}" placeholder="Consulte la tarifa"><p class="small text-muted mt-1" id="tarifario-resuelto">{% if resultado %}Tarifario: {{ tarifa.tarifario.nombre }}{% endif %}</p></div>
+    {% if resultado %}
+<div class="col-12" id="resumen-descuento">
+  <div class="card bg-light border">
+    <div class="card-body">
+      <h5 class="card-title mb-3">
+        Resultado financiero
+      </h5>
+
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="text-muted small">Tarifa base</div>
+          <strong>
+            {{ tarifa.tarifario.moneda }}
+            {{ '%.2f'|format(resultado.tarifa_base) }}
+          </strong>
+        </div>
+
+        <div class="col-md-4">
+          <div class="text-muted small">Familia</div>
+
+          {% if familia_descuento %}
+          <strong>{{ familia_descuento.nombre }}</strong>
+          {% else %}
+          <span>Sin familia activa</span>
+          {% endif %}
+        </div>
+
+        <div class="col-md-4">
+          <div class="text-muted small">
+            Integrantes para la fecha
+          </div>
+
+          {% if familia_descuento %}
+          <strong>{{ cantidad_familia }}</strong>
+          {% else %}
+          <span>—</span>
+          {% endif %}
+        </div>
+
+        <div class="col-md-6">
+          <div class="text-muted small">
+            Descuento automático
+          </div>
+
+          {% if regla_descuento %}
+            <strong>{{ regla_descuento.codigo }}</strong>
+
+            {% if regla_descuento.porcentaje is not none %}
+              — {{ regla_descuento.porcentaje }}%
+            {% else %}
+              —
+              {{ tarifa.tarifario.moneda }}
+              {{ '%.2f'|format(regla_descuento.valor_fijo) }}
+            {% endif %}
+          {% else %}
+            <span>Sin descuento automático</span>
+          {% endif %}
+        </div>
+
+        <div class="col-md-3">
+          <div class="text-muted small">Descuento</div>
+          <strong>
+            {{ tarifa.tarifario.moneda }}
+            {{ '%.2f'|format(
+                resultado.tarifa_base - resultado.valor_final
+            ) }}
+          </strong>
+        </div>
+
+        <div class="col-md-3">
+          <div class="text-muted small">
+            Valor resultante
+          </div>
+          <strong class="fs-5">
+            {{ tarifa.tarifario.moneda }}
+            {{ '%.2f'|format(resultado.valor_final) }}
+          </strong>
+        </div>
+      </div>
+
+      {% if regla_descuento %}
+      <div class="alert alert-info mt-3 mb-0">
+        El descuento por hermanos se calculó según la
+        composición familiar existente en la fecha de inicio.
+        Los valores históricos no se recalculan.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
     <div class="col-12 d-flex flex-wrap gap-2">
       <button class="btn btn-outline-primary" type="submit" name="accion" value="consultar">Consultar tarifa</button>
       <button class="btn btn-primary" id="guardar-asignacion" type="submit" {% if not resultado or error %}disabled{% endif %}>Guardar asignación</button>
@@ -29,12 +120,18 @@
 <script>
   // Una modificación de las opciones requiere consultar nuevamente el precio.
   for (const id of ['plan_id', 'frecuencia_id', 'fecha_inicio']) {
-    document.getElementById(id).addEventListener('change', () => {
-      document.getElementById('guardar-asignacion').disabled = true;
-      document.getElementById('importe').value = '';
-      document.getElementById('tarifario-resuelto').textContent = 'Consulte la tarifa para esta selección.';
-    });
-  }
+  document.getElementById(id).addEventListener('change', () => {
+    document.getElementById('guardar-asignacion').disabled = true;
+    document.getElementById('importe').value = '';
+    document.getElementById('tarifario-resuelto').textContent =
+      'Consulte la tarifa para esta selección.';
+
+    const resumen = document.getElementById('resumen-descuento');
+    if (resumen) {
+      resumen.style.display = 'none';
+    }
+  });
+}
 </script>
 {% endif %}
 {% if historial %}
