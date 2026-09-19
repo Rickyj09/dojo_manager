@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from app.models.finanzas import GrupoFamiliar
+from app.models.finanzas import AlumnoGrupoFamiliar, GrupoFamiliar
 from app.services.finanzas.familias import (
     asignar_alumno_a_familia,
     crear_grupo_familiar,
@@ -549,3 +549,348 @@ def test_csrf_protege_mutaciones_de_familias(
     assert b'name="csrf_token"' in client.get(
         f"/finanzas/familias/{familia.id}"
     ).data
+
+def test_admin_puede_agregar_integrante_a_familia(
+    app,
+    db,
+    base_data,
+):
+    academia_id = base_data["academia_a"].id
+
+    familia = crear_familia(
+        db,
+        academia_id,
+        "FAM-INTEGRANTES",
+        "Familia Integrantes",
+    )
+
+    alumno = base_data["alumno_a1"]
+
+    client = cliente(app, base_data["admin_a"])
+
+    response = client.post(
+        f"/finanzas/familias/{familia.id}/integrantes",
+        data={
+            "alumno_id": str(alumno.id),
+            "fecha_inicio": "2026-09-01",
+        },
+    )
+
+    assert response.status_code == 302
+
+    membresia = AlumnoGrupoFamiliar.query.filter_by(
+        academia_id=academia_id,
+        grupo_familiar_id=familia.id,
+        alumno_id=alumno.id,
+    ).one()
+
+    assert membresia.activo is True
+    assert membresia.fecha_inicio == date(2026, 9, 1)
+    assert membresia.fecha_fin is None
+
+
+def test_detalle_muestra_integrante_activo(
+    app,
+    db,
+    base_data,
+):
+    academia_id = base_data["academia_a"].id
+
+    familia = crear_familia(
+        db,
+        academia_id,
+        "FAM-DETALLE",
+        "Familia Detalle",
+    )
+
+    alumno = base_data["alumno_a1"]
+
+    asignar_alumno_a_familia(
+        academia_id=academia_id,
+        alumno_id=alumno.id,
+        grupo_familiar_id=familia.id,
+        fecha_inicio=date(2026, 9, 1),
+    )
+    db.session.commit()
+
+    client = cliente(app, base_data["admin_a"])
+
+    response = client.get(
+        f"/finanzas/familias/{familia.id}"
+    )
+
+    assert response.status_code == 200
+    assert alumno.nombres.encode() in response.data
+    assert alumno.apellidos.encode() in response.data
+    assert b"ACTIVO" in response.data
+    assert b"Retirar" in response.data
+
+
+def test_no_permite_agregar_alumno_de_otro_tenant(
+    app,
+    db,
+    base_data,
+):
+    familia = crear_familia(
+        db,
+        base_data["academia_a"].id,
+        "FAM-A",
+        "Familia A",
+    )
+
+    client = cliente(app, base_data["admin_a"])
+
+    response = client.post(
+        f"/finanzas/familias/{familia.id}/integrantes",
+        data={
+            "alumno_id": str(base_data["alumno_b1"].id),
+            "fecha_inicio": "2026-09-01",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Alumno no pertenece" in response.data
+
+    assert AlumnoGrupoFamiliar.query.filter_by(
+        academia_id=base_data["academia_a"].id,
+        grupo_familiar_id=familia.id,
+    ).count() == 0
+
+
+def test_no_permite_alumno_en_dos_familias_activas(
+    app,
+    db,
+    base_data,
+):
+    academia_id = base_data["academia_a"].id
+    alumno = base_data["alumno_a1"]
+
+    familia_1 = crear_familia(
+        db,
+        academia_id,
+        "FAM-1",
+        "Familia 1",
+    )
+
+    familia_2 = crear_familia(
+        db,
+        academia_id,
+        "FAM-2",
+        "Familia 2",
+    )
+
+    asignar_alumno_a_familia(
+        academia_id=academia_id,
+        alumno_id=alumno.id,
+        grupo_familiar_id=familia_1.id,
+        fecha_inicio=date(2026, 9, 1),
+    )
+    db.session.commit()
+
+    client = cliente(app, base_data["admin_a"])
+
+    response = client.post(
+        f"/finanzas/familias/{familia_2.id}/integrantes",
+        data={
+            "alumno_id": str(alumno.id),
+            "fecha_inicio": "2026-09-15",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"familia activa" in response.data
+
+    assert AlumnoGrupoFamiliar.query.filter_by(
+        alumno_id=alumno.id,
+        activo=True,
+    ).count() == 1
+
+
+def test_admin_puede_retirar_integrante_y_conserva_historial(
+    app,
+    db,
+    base_data,
+):
+    academia_id = base_data["academia_a"].id
+    alumno = base_data["alumno_a1"]
+
+    familia = crear_familia(
+        db,
+        academia_id,
+        "FAM-RETIRO",
+        "Familia Retiro",
+    )
+
+    membresia = asignar_alumno_a_familia(
+        academia_id=academia_id,
+        alumno_id=alumno.id,
+        grupo_familiar_id=familia.id,
+        fecha_inicio=date(2026, 9, 1),
+    )
+    db.session.commit()
+
+    client = cliente(app, base_data["admin_a"])
+
+    response = client.post(
+        (
+            f"/finanzas/familias/{familia.id}/integrantes/"
+            f"{membresia.id}/retirar"
+        ),
+        data={
+            "fecha_fin": "2026-10-15",
+        },
+    )
+
+    assert response.status_code == 302
+
+    db.session.refresh(membresia)
+
+    assert membresia.activo is False
+    assert membresia.fecha_fin == date(2026, 10, 15)
+
+    detalle = client.get(
+        f"/finanzas/familias/{familia.id}"
+    )
+
+    assert b"HIST" in detalle.data
+    assert alumno.nombres.encode() in detalle.data
+
+
+def test_retiro_rechaza_fecha_anterior_al_ingreso(
+    app,
+    db,
+    base_data,
+):
+    academia_id = base_data["academia_a"].id
+    alumno = base_data["alumno_a1"]
+
+    familia = crear_familia(
+        db,
+        academia_id,
+        "FAM-FECHA",
+        "Familia Fecha",
+    )
+
+    membresia = asignar_alumno_a_familia(
+        academia_id=academia_id,
+        alumno_id=alumno.id,
+        grupo_familiar_id=familia.id,
+        fecha_inicio=date(2026, 9, 10),
+    )
+    db.session.commit()
+
+    client = cliente(app, base_data["admin_a"])
+
+    response = client.post(
+        (
+            f"/finanzas/familias/{familia.id}/integrantes/"
+            f"{membresia.id}/retirar"
+        ),
+        data={
+            "fecha_fin": "2026-09-01",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"anterior" in response.data
+
+    db.session.refresh(membresia)
+    assert membresia.activo is True
+    assert membresia.fecha_fin is None
+
+
+def test_membresia_de_otra_familia_no_puede_retirarse(
+    app,
+    db,
+    base_data,
+):
+    academia_id = base_data["academia_a"].id
+
+    familia_1 = crear_familia(
+        db,
+        academia_id,
+        "FAM-1",
+        "Familia 1",
+    )
+
+    familia_2 = crear_familia(
+        db,
+        academia_id,
+        "FAM-2",
+        "Familia 2",
+    )
+
+    membresia = asignar_alumno_a_familia(
+        academia_id=academia_id,
+        alumno_id=base_data["alumno_a1"].id,
+        grupo_familiar_id=familia_1.id,
+        fecha_inicio=date(2026, 9, 1),
+    )
+    db.session.commit()
+
+    client = cliente(app, base_data["admin_a"])
+
+    response = client.post(
+        (
+            f"/finanzas/familias/{familia_2.id}/integrantes/"
+            f"{membresia.id}/retirar"
+        ),
+        data={
+            "fecha_fin": "2026-10-01",
+        },
+    )
+
+    assert response.status_code == 404
+
+    db.session.refresh(membresia)
+    assert membresia.activo is True
+
+
+def test_profesor_no_puede_agregar_ni_retirar_integrantes(
+    app,
+    db,
+    base_data,
+):
+    academia_id = base_data["academia_a"].id
+    alumno = base_data["alumno_a1"]
+
+    profesor = base_data["profesor_a"]
+    alumno.sucursal_id = profesor.sucursal_id
+
+    familia = crear_familia(
+        db,
+        academia_id,
+        "FAM-PROF",
+        "Familia Profesor",
+    )
+
+    membresia = asignar_alumno_a_familia(
+        academia_id=academia_id,
+        alumno_id=alumno.id,
+        grupo_familiar_id=familia.id,
+        fecha_inicio=date(2026, 9, 1),
+    )
+    db.session.commit()
+
+    client = cliente(app, profesor)
+
+    assert client.post(
+        f"/finanzas/familias/{familia.id}/integrantes",
+        data={
+            "alumno_id": str(base_data["alumno_a2"].id),
+            "fecha_inicio": "2026-09-01",
+        },
+    ).status_code == 403
+
+    assert client.post(
+        (
+            f"/finanzas/familias/{familia.id}/integrantes/"
+            f"{membresia.id}/retirar"
+        ),
+        data={
+            "fecha_fin": "2026-10-01",
+        },
+    ).status_code == 403

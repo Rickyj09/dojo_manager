@@ -56,6 +56,193 @@
   </div>
 </div>
 
+{% if puede_escribir and familia.activo %}
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <h5 class="card-title mb-3">Agregar integrante</h5>
+
+    {% if alumnos_disponibles %}
+    <form
+      method="post"
+      action="{{ url_for(
+          'finanzas.agregar_integrante_familia',
+          grupo_familiar_id=familia.id
+      ) }}"
+      class="row g-3 align-items-end"
+    >
+      <input
+        type="hidden"
+        name="csrf_token"
+        value="{{ csrf_token() }}"
+      >
+
+      <div class="col-md-7">
+        <label class="form-label" for="alumno_id">
+          Alumno
+        </label>
+
+        <select
+          class="form-select"
+          id="alumno_id"
+          name="alumno_id"
+          required
+        >
+          <option value="">Seleccione un alumno</option>
+
+          {% for alumno in alumnos_disponibles %}
+          <option value="{{ alumno.id }}">
+            {{ alumno.apellidos }} {{ alumno.nombres }}
+          </option>
+          {% endfor %}
+        </select>
+
+        <div class="form-text">
+          Solo aparecen alumnos activos que no pertenecen
+          actualmente a otra familia.
+        </div>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label" for="fecha_inicio">
+          Fecha de ingreso
+        </label>
+
+        <input
+          class="form-control"
+          type="date"
+          id="fecha_inicio"
+          name="fecha_inicio"
+          value="{{ fecha_hoy }}"
+          required
+        >
+      </div>
+
+      <div class="col-md-2">
+        <button class="btn btn-primary w-100" type="submit">
+          <i class="bi bi-person-plus"></i>
+          Agregar
+        </button>
+      </div>
+    </form>
+    {% else %}
+    <div class="alert alert-secondary mb-0">
+      No hay alumnos disponibles para agregar a esta familia.
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <h5 class="card-title mb-1">Integrantes</h5>
+        <p class="text-muted mb-0">
+          Integrantes actuales e historial del grupo familiar.
+        </p>
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-striped align-middle">
+        <thead class="table-dark">
+          <tr>
+            <th>Alumno</th>
+            <th>Ingreso</th>
+            <th>Retiro</th>
+            <th>Estado</th>
+            {% if puede_escribir %}
+            <th class="text-end">Acciones</th>
+            {% endif %}
+          </tr>
+        </thead>
+
+        <tbody>
+        {% for membresia in membresias %}
+          <tr>
+            <td>
+              <strong>
+                {{ membresia.alumno.apellidos }}
+                {{ membresia.alumno.nombres }}
+              </strong>
+            </td>
+
+            <td>
+              {{ membresia.fecha_inicio.strftime('%d/%m/%Y') }}
+            </td>
+
+            <td>
+              {{ membresia.fecha_fin.strftime('%d/%m/%Y')
+                 if membresia.fecha_fin else '-' }}
+            </td>
+
+            <td>
+              {% if membresia.activo %}
+              <span class="badge bg-success">ACTIVO</span>
+              {% else %}
+              <span class="badge bg-secondary">HISTÓRICO</span>
+              {% endif %}
+            </td>
+
+            {% if puede_escribir %}
+            <td class="text-end">
+              {% if membresia.activo %}
+              <form
+                method="post"
+                class="d-inline-flex gap-2 align-items-center"
+                action="{{ url_for(
+                    'finanzas.retirar_integrante_familia',
+                    grupo_familiar_id=familia.id,
+                    membresia_id=membresia.id
+                ) }}"
+              >
+                <input
+                  type="hidden"
+                  name="csrf_token"
+                  value="{{ csrf_token() }}"
+                >
+
+                <input
+                  class="form-control form-control-sm"
+                  type="date"
+                  name="fecha_fin"
+                  value="{{ fecha_hoy }}"
+                  min="{{ membresia.fecha_inicio.isoformat() }}"
+                  required
+                  style="width: 150px;"
+                >
+
+                <button
+                  class="btn btn-outline-danger btn-sm"
+                  type="submit"
+                >
+                  Retirar
+                </button>
+              </form>
+              {% else %}
+              <span class="text-muted">Sin acciones</span>
+              {% endif %}
+            </td>
+            {% endif %}
+          </tr>
+
+        {% else %}
+          <tr>
+            <td
+              colspan="{{ 5 if puede_escribir else 4 }}"
+              class="text-center text-muted"
+            >
+              Esta familia todavía no tiene integrantes.
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 {% if puede_escribir %}
 <div class="card shadow-sm">
   <div class="card-body">
@@ -71,17 +258,26 @@
     </p>
     {% endif %}
 
-    <form method="post"
-          action="{{ url_for(
-              'finanzas.alternar_familia_activa',
-              grupo_familiar_id=familia.id
-          ) }}">
-      <input type="hidden"
-             name="csrf_token"
-             value="{{ csrf_token() }}">
+    <form
+      method="post"
+      action="{{ url_for(
+          'finanzas.alternar_familia_activa',
+          grupo_familiar_id=familia.id
+      ) }}"
+    >
+      <input
+        type="hidden"
+        name="csrf_token"
+        value="{{ csrf_token() }}"
+      >
 
-      <button class="btn btn-outline-secondary" type="submit">
-        {{ 'Desactivar familia' if familia.activo else 'Activar familia' }}
+      <button
+        class="btn btn-outline-secondary"
+        type="submit"
+      >
+        {{ 'Desactivar familia'
+           if familia.activo
+           else 'Activar familia' }}
       </button>
     </form>
   </div>

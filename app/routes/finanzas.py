@@ -39,7 +39,9 @@ from app.services.finanzas import (
 )
 from app.services.finanzas.familias import (
     FinanzasError,
+    asignar_alumno_a_familia,
     crear_grupo_familiar,
+    retirar_alumno_de_familia,
 )
 from app.services.finanzas.obligaciones import (
     generar_obligaciones_mensuales, previsualizar_obligaciones_mensuales, parsear_periodo,
@@ -219,6 +221,12 @@ def _tarifa_de_tarifario(academia_id, tarifario_id, tarifa_id):
     return TarifaPlan.query.filter_by(
         id=tarifa_id, academia_id=academia_id, tarifario_id=tarifario_id,
     ).first_or_404()
+
+def _parse_fecha_familia(value: str, campo: str) -> date:
+    try:
+        return date.fromisoformat((value or "").strip())
+    except ValueError:
+        raise FinanzasError(f"La {campo} no es válida")
 
 
 @finanzas_bp.route("/generar-obligaciones", methods=["GET", "POST"])
@@ -439,10 +447,192 @@ def familia_detalle(grupo_familiar_id):
         grupo_familiar_id,
     )
 
+    membresias_query = (
+        AlumnoGrupoFamiliar.query
+        .join(
+            Alumno,
+            Alumno.id == AlumnoGrupoFamiliar.alumno_id,
+        )
+        .filter(
+            AlumnoGrupoFamiliar.academia_id == academia_id,
+            AlumnoGrupoFamiliar.grupo_familiar_id == familia.id,
+            Alumno.academia_id == academia_id,
+        )
+    )
+
+    if current_user.has_role("PROFESOR"):
+        membresias_query = membresias_query.filter(
+            Alumno.sucursal_id == current_user.sucursal_id,
+        )
+
+    membresias = membresias_query.order_by(
+        AlumnoGrupoFamiliar.activo.desc(),
+        Alumno.apellidos,
+        Alumno.nombres,
+        AlumnoGrupoFamiliar.fecha_inicio.desc(),
+    ).all()
+
+    alumnos_query = Alumno.query.filter(
+        Alumno.academia_id == academia_id,
+        Alumno.activo.is_(True),
+    )
+
+    if current_user.has_role("PROFESOR"):
+        alumnos_query = alumnos_query.filter(
+            Alumno.sucursal_id == current_user.sucursal_id,
+        )
+
+    alumnos_con_familia = (
+        db.session.query(AlumnoGrupoFamiliar.alumno_id)
+        .filter(
+            AlumnoGrupoFamiliar.academia_id == academia_id,
+            AlumnoGrupoFamiliar.activo.is_(True),
+        )
+    )
+
+    alumnos_disponibles = (
+        alumnos_query
+        .filter(~Alumno.id.in_(alumnos_con_familia))
+        .order_by(
+            Alumno.apellidos,
+            Alumno.nombres,
+            Alumno.id,
+        )
+        .all()
+    )
+
     return render_template(
         "finanzas/familia_detalle.html",
         familia=familia,
+        membresias=membresias,
+        alumnos_disponibles=alumnos_disponibles,
         puede_escribir=_puede_escribir_finanzas(),
+        fecha_hoy=date.today().isoformat(),
+    )
+
+@finanzas_bp.route(
+    "/familias/<int:grupo_familiar_id>/integrantes",
+    methods=["POST"],
+)
+@login_required
+def agregar_integrante_familia(grupo_familiar_id):
+    if not _puede_escribir_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+    familia = _grupo_familiar_de_academia(
+        academia_id,
+        grupo_familiar_id,
+    )
+
+    try:
+        alumno_id = int(
+            _texto_obligatorio("alumno_id")
+        )
+
+        fecha_inicio = _parse_fecha_familia(
+            request.form.get("fecha_inicio"),
+            "fecha de ingreso",
+        )
+
+        asignar_alumno_a_familia(
+            academia_id=academia_id,
+            alumno_id=alumno_id,
+            grupo_familiar_id=familia.id,
+            fecha_inicio=fecha_inicio,
+        )
+
+        db.session.commit()
+
+    except (ValueError, FinanzasError, IntegrityError) as exc:
+        db.session.rollback()
+
+        if isinstance(exc, IntegrityError):
+            mensaje = "No se pudo agregar el alumno a la familia."
+        else:
+            mensaje = str(exc)
+
+        flash(mensaje, "danger")
+
+    else:
+        flash(
+            "Integrante agregado correctamente.",
+            "success",
+        )
+
+    return redirect(
+        url_for(
+            "finanzas.familia_detalle",
+            grupo_familiar_id=familia.id,
+        )
+    )
+
+
+@finanzas_bp.route(
+    "/familias/<int:grupo_familiar_id>/integrantes/"
+    "<int:membresia_id>/retirar",
+    methods=["POST"],
+)
+@login_required
+def retirar_integrante_familia(
+    grupo_familiar_id,
+    membresia_id,
+):
+    if not _puede_escribir_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+    familia = _grupo_familiar_de_academia(
+        academia_id,
+        grupo_familiar_id,
+    )
+
+    membresia = AlumnoGrupoFamiliar.query.filter_by(
+        id=membresia_id,
+        academia_id=academia_id,
+        grupo_familiar_id=familia.id,
+        activo=True,
+    ).first()
+
+    if membresia is None:
+        abort(404)
+
+    try:
+        fecha_fin = _parse_fecha_familia(
+            request.form.get("fecha_fin"),
+            "fecha de retiro",
+        )
+
+        retirar_alumno_de_familia(
+            academia_id=academia_id,
+            alumno_id=membresia.alumno_id,
+            grupo_familiar_id=familia.id,
+            fecha_fin=fecha_fin,
+        )
+
+        db.session.commit()
+
+    except (ValueError, FinanzasError, IntegrityError) as exc:
+        db.session.rollback()
+
+        flash(
+            str(exc)
+            if not isinstance(exc, IntegrityError)
+            else "No se pudo retirar el integrante.",
+            "danger",
+        )
+
+    else:
+        flash(
+            "Integrante retirado correctamente.",
+            "success",
+        )
+
+    return redirect(
+        url_for(
+            "finanzas.familia_detalle",
+            grupo_familiar_id=familia.id,
+        )
     )
 
 
