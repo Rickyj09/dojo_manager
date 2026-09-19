@@ -154,6 +154,19 @@
               <i class="bi bi-person-check me-2"></i> Asignaciones
             </a>
           </li>
+         <li class="nav-item">
+            <a class="nav-link text-white-50
+               {% if ep in [
+                 'finanzas.familias',
+                 'finanzas.familia_detalle',
+                 'finanzas.nueva_familia',
+                 'finanzas.editar_familia',
+                 'finanzas.alternar_familia_activa'
+               ] %}active{% endif %}"
+               href="{{ url_for('finanzas.familias') }}">
+              <i class="bi bi-people me-2"></i> Familias
+            </a>
+          </li>
           {% if is_admin %}
           <li class="nav-item mt-2">
             <span class="nav-link disabled text-uppercase small text-white-50 py-1">Configuración</span>

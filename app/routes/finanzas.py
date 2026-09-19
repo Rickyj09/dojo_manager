@@ -7,8 +7,16 @@ from werkzeug.exceptions import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from app.models.alumno import Alumno
-from app.models.finanzas import AlumnoPlanFinanciero, FrecuenciaEntrenamiento, PlanFinanciero, TarifaPlan, Tarifario
-from sqlalchemy import and_
+from app.models.finanzas import (
+    AlumnoGrupoFamiliar,
+    AlumnoPlanFinanciero,
+    FrecuenciaEntrenamiento,
+    GrupoFamiliar,
+    PlanFinanciero,
+    TarifaPlan,
+    Tarifario,
+)
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import joinedload
 from app.extensions import db
 from app.services.finanzas import (
@@ -29,7 +37,10 @@ from app.services.finanzas import (
     registrar_pago,
     resolver_ruta_comprobante,
 )
-from app.services.finanzas.familias import FinanzasError
+from app.services.finanzas.familias import (
+    FinanzasError,
+    crear_grupo_familiar,
+)
 from app.services.finanzas.obligaciones import (
     generar_obligaciones_mensuales, previsualizar_obligaciones_mensuales, parsear_periodo,
 )
@@ -76,6 +87,47 @@ def _validar_alumno_visible(academia_id: int, alumno_id: int):
     if current_user.has_role("PROFESOR") and alumno.sucursal_id != current_user.sucursal_id:
         abort(403)
     return alumno
+
+def _grupo_familiar_de_academia(academia_id: int, grupo_familiar_id: int):
+    grupo = GrupoFamiliar.query.filter_by(
+        id=grupo_familiar_id,
+        academia_id=academia_id,
+    ).first()
+
+    if grupo is None:
+        abort(404)
+
+    return grupo
+
+
+def _validar_familia_visible(academia_id: int, grupo_familiar_id: int):
+    grupo = _grupo_familiar_de_academia(
+        academia_id,
+        grupo_familiar_id,
+    )
+
+    if current_user.has_role("PROFESOR"):
+        membresia_visible = (
+            AlumnoGrupoFamiliar.query
+            .join(
+                Alumno,
+                Alumno.id == AlumnoGrupoFamiliar.alumno_id,
+            )
+            .filter(
+                AlumnoGrupoFamiliar.academia_id == academia_id,
+                AlumnoGrupoFamiliar.grupo_familiar_id == grupo.id,
+                AlumnoGrupoFamiliar.activo.is_(True),
+                Alumno.academia_id == academia_id,
+                Alumno.sucursal_id == current_user.sucursal_id,
+                Alumno.activo.is_(True),
+            )
+            .first()
+        )
+
+        if membresia_visible is None:
+            abort(403)
+
+    return grupo
 
 
 def _parse_fecha_pago(value: str) -> date:
@@ -308,6 +360,254 @@ def configuracion_alumno(alumno_id):
         puede_escribir_finanzas=_puede_escribir_finanzas(), ver_finanzas=True,
     )
 
+
+@finanzas_bp.route("/familias")
+@login_required
+def familias():
+    if not _puede_ver_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+    q = (request.args.get("q") or "").strip()
+    filtro = (request.args.get("estado") or "todas").strip()
+
+    query = GrupoFamiliar.query.filter(
+        GrupoFamiliar.academia_id == academia_id,
+    )
+
+    if current_user.has_role("PROFESOR"):
+        query = (
+            query
+            .join(
+                AlumnoGrupoFamiliar,
+                AlumnoGrupoFamiliar.grupo_familiar_id == GrupoFamiliar.id,
+            )
+            .join(
+                Alumno,
+                Alumno.id == AlumnoGrupoFamiliar.alumno_id,
+            )
+            .filter(
+                AlumnoGrupoFamiliar.academia_id == academia_id,
+                AlumnoGrupoFamiliar.activo.is_(True),
+                Alumno.academia_id == academia_id,
+                Alumno.sucursal_id == current_user.sucursal_id,
+                Alumno.activo.is_(True),
+            )
+            .distinct()
+        )
+
+    if q:
+        patron = f"%{q}%"
+        query = query.filter(
+            or_(
+                GrupoFamiliar.codigo.ilike(patron),
+                GrupoFamiliar.nombre.ilike(patron),
+            )
+        )
+
+    if filtro == "activas":
+        query = query.filter(GrupoFamiliar.activo.is_(True))
+    elif filtro == "inactivas":
+        query = query.filter(GrupoFamiliar.activo.is_(False))
+    else:
+        filtro = "todas"
+
+    grupos = query.order_by(
+        GrupoFamiliar.nombre,
+        GrupoFamiliar.codigo,
+        GrupoFamiliar.id,
+    ).all()
+
+    return render_template(
+        "finanzas/familias.html",
+        familias=grupos,
+        q=q,
+        filtro=filtro,
+        puede_escribir=_puede_escribir_finanzas(),
+    )
+
+
+@finanzas_bp.route("/familias/<int:grupo_familiar_id>")
+@login_required
+def familia_detalle(grupo_familiar_id):
+    if not _puede_ver_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+    familia = _validar_familia_visible(
+        academia_id,
+        grupo_familiar_id,
+    )
+
+    return render_template(
+        "finanzas/familia_detalle.html",
+        familia=familia,
+        puede_escribir=_puede_escribir_finanzas(),
+    )
+
+
+@finanzas_bp.route("/familias/nueva", methods=["GET", "POST"])
+@login_required
+def nueva_familia():
+    if not _puede_escribir_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+
+    form = {
+        "codigo": request.form.get("codigo") or "",
+        "nombre": request.form.get("nombre") or "",
+        "observaciones": request.form.get("observaciones") or "",
+    }
+
+    if request.method == "POST":
+        try:
+            familia = crear_grupo_familiar(
+                academia_id=academia_id,
+                codigo=_texto_obligatorio("codigo"),
+                nombre=_texto_obligatorio("nombre"),
+                observaciones=form["observaciones"].strip() or None,
+            )
+            db.session.commit()
+
+        except (FinanzasError, ValueError, IntegrityError) as exc:
+            db.session.rollback()
+
+            if isinstance(exc, IntegrityError):
+                mensaje = (
+                    "Ya existe una familia con ese código "
+                    "en esta academia."
+                )
+            else:
+                mensaje = str(exc)
+
+            flash(mensaje, "danger")
+
+        else:
+            flash("Familia creada correctamente.", "success")
+            return redirect(
+                url_for(
+                    "finanzas.familia_detalle",
+                    grupo_familiar_id=familia.id,
+                )
+            )
+
+    return render_template(
+        "finanzas/familia_form.html",
+        familia=None,
+        form=form,
+    )
+
+
+@finanzas_bp.route(
+    "/familias/<int:grupo_familiar_id>/editar",
+    methods=["GET", "POST"],
+)
+@login_required
+def editar_familia(grupo_familiar_id):
+    if not _puede_escribir_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+    familia = _grupo_familiar_de_academia(
+        academia_id,
+        grupo_familiar_id,
+    )
+
+    form = {
+        "codigo": familia.codigo,
+        "nombre": request.form.get("nombre", familia.nombre),
+        "observaciones": request.form.get(
+            "observaciones",
+            familia.observaciones or "",
+        ),
+    }
+
+    if request.method == "POST":
+        try:
+            familia.nombre = _texto_obligatorio("nombre")
+            familia.observaciones = (
+                form["observaciones"].strip() or None
+            )
+            db.session.commit()
+
+        except (FinanzasError, ValueError, IntegrityError) as exc:
+            db.session.rollback()
+
+            flash(
+                str(exc)
+                if not isinstance(exc, IntegrityError)
+                else "No se pudo actualizar la familia.",
+                "danger",
+            )
+
+        else:
+            flash("Familia actualizada correctamente.", "success")
+            return redirect(
+                url_for(
+                    "finanzas.familia_detalle",
+                    grupo_familiar_id=familia.id,
+                )
+            )
+
+    return render_template(
+        "finanzas/familia_form.html",
+        familia=familia,
+        form=form,
+    )
+
+
+@finanzas_bp.route(
+    "/familias/<int:grupo_familiar_id>/alternar-activo",
+    methods=["POST"],
+)
+@login_required
+def alternar_familia_activa(grupo_familiar_id):
+    if not _puede_escribir_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+    familia = _grupo_familiar_de_academia(
+        academia_id,
+        grupo_familiar_id,
+    )
+
+    if familia.activo:
+        integrantes_activos = AlumnoGrupoFamiliar.query.filter_by(
+            academia_id=academia_id,
+            grupo_familiar_id=familia.id,
+            activo=True,
+        ).count()
+
+        if integrantes_activos:
+            flash(
+                "No se puede desactivar una familia que todavía "
+                "tiene integrantes activos.",
+                "danger",
+            )
+            return redirect(
+                url_for(
+                    "finanzas.familia_detalle",
+                    grupo_familiar_id=familia.id,
+                )
+            )
+
+    familia.activo = not familia.activo
+    db.session.commit()
+
+    flash(
+        "Familia activada."
+        if familia.activo
+        else "Familia desactivada.",
+        "success",
+    )
+
+    return redirect(
+        url_for(
+            "finanzas.familia_detalle",
+            grupo_familiar_id=familia.id,
+        )
+    )
 
 @finanzas_bp.route("/tarifarios")
 @login_required

@@ -1,0 +1,84 @@
+{% extends "base_admin.html" %}
+{% block title %}{{ 'Editar' if familia else 'Nueva' }} familia{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h3 class="mb-1">
+      {{ 'Editar familia' if familia else 'Nueva familia' }}
+    </h3>
+    <p class="text-muted mb-0">
+      Información general del grupo familiar.
+    </p>
+  </div>
+
+  <a class="btn btn-outline-secondary"
+     href="{{ url_for('finanzas.familias') }}">
+    Volver
+  </a>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" class="row g-3">
+      <input type="hidden"
+             name="csrf_token"
+             value="{{ csrf_token() }}">
+
+      <div class="col-md-4">
+        <label class="form-label" for="codigo">Código</label>
+
+        {% if familia %}
+        <input
+          class="form-control"
+          id="codigo"
+          value="{{ familia.codigo }}"
+          readonly
+        >
+        <div class="form-text">
+          El código no puede modificarse después de crear la familia.
+        </div>
+        {% else %}
+        <input
+          class="form-control"
+          id="codigo"
+          name="codigo"
+          maxlength="50"
+          value="{{ form.codigo }}"
+          required
+        >
+        {% endif %}
+      </div>
+
+      <div class="col-md-8">
+        <label class="form-label" for="nombre">Nombre</label>
+        <input
+          class="form-control"
+          id="nombre"
+          name="nombre"
+          maxlength="120"
+          value="{{ form.nombre }}"
+          required
+        >
+      </div>
+
+      <div class="col-12">
+        <label class="form-label"
+               for="observaciones">Observaciones</label>
+        <textarea
+          class="form-control"
+          id="observaciones"
+          name="observaciones"
+          rows="4"
+        >{{ form.observaciones }}</textarea>
+      </div>
+
+      <div class="col-12">
+        <button class="btn btn-primary" type="submit">
+          Guardar
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

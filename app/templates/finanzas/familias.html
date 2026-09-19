@@ -1,0 +1,116 @@
+{% extends "base_admin.html" %}
+{% block title %}Familias{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
+  <div>
+    <h3 class="mb-1">Familias</h3>
+    <p class="text-muted mb-0">
+      Grupos familiares utilizados para la gestión financiera de la academia.
+    </p>
+  </div>
+
+  {% if puede_escribir %}
+  <a class="btn btn-primary"
+     href="{{ url_for('finanzas.nueva_familia') }}">
+    <i class="bi bi-plus-circle"></i> Nueva familia
+  </a>
+  {% endif %}
+</div>
+
+<form method="get" class="row g-2 align-items-end mb-4">
+  <div class="col-md-5">
+    <label class="form-label" for="q">Buscar</label>
+    <input
+      class="form-control"
+      id="q"
+      name="q"
+      value="{{ q }}"
+      placeholder="Código o nombre de la familia"
+    >
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label" for="estado">Estado</label>
+    <select class="form-select" id="estado" name="estado">
+      <option value="todas" {% if filtro == 'todas' %}selected{% endif %}>
+        Todas
+      </option>
+      <option value="activas" {% if filtro == 'activas' %}selected{% endif %}>
+        Activas
+      </option>
+      <option value="inactivas" {% if filtro == 'inactivas' %}selected{% endif %}>
+        Inactivas
+      </option>
+    </select>
+  </div>
+
+  <div class="col-md-auto">
+    <button class="btn btn-outline-primary" type="submit">
+      <i class="bi bi-search"></i> Buscar
+    </button>
+
+    <a class="btn btn-outline-secondary"
+       href="{{ url_for('finanzas.familias') }}">
+      Limpiar
+    </a>
+  </div>
+</form>
+
+<div class="card shadow-sm">
+  <div class="card-body table-responsive">
+    <table class="table table-striped align-middle">
+      <thead class="table-dark">
+        <tr>
+          <th>Código</th>
+          <th>Familia</th>
+          <th>Observaciones</th>
+          <th>Estado</th>
+          <th class="text-end">Acciones</th>
+        </tr>
+      </thead>
+
+      <tbody>
+      {% for familia in familias %}
+        <tr>
+          <td>{{ familia.codigo }}</td>
+          <td>{{ familia.nombre }}</td>
+          <td>{{ familia.observaciones or "-" }}</td>
+          <td>
+            <span class="badge {{ 'bg-success' if familia.activo else 'bg-secondary' }}">
+              {{ 'ACTIVA' if familia.activo else 'INACTIVA' }}
+            </span>
+          </td>
+
+          <td class="text-end">
+            <a class="btn btn-outline-secondary btn-sm"
+               href="{{ url_for(
+                   'finanzas.familia_detalle',
+                   grupo_familiar_id=familia.id
+               ) }}">
+              Ver
+            </a>
+
+            {% if puede_escribir %}
+            <a class="btn btn-outline-primary btn-sm"
+               href="{{ url_for(
+                   'finanzas.editar_familia',
+                   grupo_familiar_id=familia.id
+               ) }}">
+              Editar
+            </a>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="5" class="text-center text-muted">
+            No hay familias que coincidan con los filtros.
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
