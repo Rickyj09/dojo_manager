@@ -45,6 +45,8 @@ from app.services.finanzas import (
     resolver_ruta_comprobante,
     ESTADOS_PAGO_FINANCIERO,
     obtener_reporte_pagos,
+    generar_excel_cartera,
+    generar_excel_pagos,
 )
 from app.services.finanzas.familias import (
     FinanzasError,
@@ -1563,6 +1565,7 @@ def alternar_frecuencia_activa(frecuencia_id):
     db.session.commit()
     flash("Frecuencia activada." if frecuencia.activo else "Frecuencia desactivada.", "success")
     return redirect(url_for("finanzas.frecuencias"))
+
 @finanzas_bp.route("/reportes/pagos")
 @login_required
 def reporte_pagos():
@@ -1671,6 +1674,116 @@ def reporte_pagos():
         estados_pago=ESTADOS_PAGO_FINANCIERO,
     )
 
+
+@finanzas_bp.route("/reportes/pagos/excel")
+@login_required
+def reporte_pagos_excel():
+    if not _puede_ver_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+
+    q = (
+        request.args.get("q") or ""
+    ).strip()
+
+    medio_pago = (
+        request.args.get("medio_pago") or ""
+    ).strip().upper()
+
+    estado = (
+        request.args.get("estado") or ""
+    ).strip().upper()
+
+    fecha_desde_raw = (
+        request.args.get("fecha_desde") or ""
+    ).strip()
+
+    fecha_hasta_raw = (
+        request.args.get("fecha_hasta") or ""
+    ).strip()
+
+    try:
+        fecha_desde = (
+            date.fromisoformat(fecha_desde_raw)
+            if fecha_desde_raw
+            else None
+        )
+
+        fecha_hasta = (
+            date.fromisoformat(fecha_hasta_raw)
+            if fecha_hasta_raw
+            else None
+        )
+
+    except ValueError:
+        abort(400)
+
+    if (
+        medio_pago
+        and medio_pago not in MEDIOS_PAGO_FINANCIERO
+    ):
+        medio_pago = ""
+
+    if (
+        estado
+        and estado not in ESTADOS_PAGO_FINANCIERO
+    ):
+        estado = ""
+
+    alumno_ids = None
+
+    if current_user.has_role("PROFESOR"):
+        alumnos_visibles = (
+            Alumno.query
+            .filter_by(
+                academia_id=academia_id,
+                sucursal_id=current_user.sucursal_id,
+            )
+            .with_entities(
+                Alumno.id
+            )
+            .all()
+        )
+
+        alumno_ids = {
+            row[0]
+            for row in alumnos_visibles
+        }
+
+    try:
+        _, pagos = obtener_reporte_pagos(
+            academia_id=academia_id,
+            fecha_desde=fecha_desde,
+            fecha_hasta=fecha_hasta,
+            q=q,
+            medio_pago=medio_pago or None,
+            estado=estado or None,
+            alumno_ids=alumno_ids,
+        )
+
+    except FinanzasError as exc:
+        abort(400, description=str(exc))
+
+    archivo = generar_excel_pagos(
+        pagos=pagos,
+    )
+
+    nombre = (
+        "reporte_pagos_"
+        f"{date.today().strftime('%Y%m%d')}.xlsx"
+    )
+
+    return send_file(
+        archivo,
+        as_attachment=True,
+        download_name=nombre,
+        mimetype=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+    )
+
 @finanzas_bp.route("/reportes/cartera")
 @login_required
 def reporte_cartera():
@@ -1748,6 +1861,96 @@ def reporte_cartera():
         q=q,
         filtro=filtro,
         periodo=periodo or "",
+    )
+
+@finanzas_bp.route("/reportes/cartera/excel")
+@login_required
+def reporte_cartera_excel():
+    if not _puede_ver_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+
+    q = (
+        request.args.get("q") or ""
+    ).strip()
+
+    filtro = (
+        request.args.get("saldo") or "todos"
+    ).strip()
+
+    periodo = (
+        request.args.get("periodo") or ""
+    ).strip() or None
+
+    if filtro not in {
+        "todos",
+        "con_saldo",
+        "vencidos",
+    }:
+        filtro = "todos"
+
+    con_saldo = filtro == "con_saldo"
+    vencidos = filtro == "vencidos"
+
+    alumno_ids = None
+
+    if current_user.has_role("PROFESOR"):
+        alumnos_visibles = (
+            Alumno.query
+            .filter_by(
+                academia_id=academia_id,
+                sucursal_id=current_user.sucursal_id,
+            )
+            .with_entities(
+                Alumno.id
+            )
+            .all()
+        )
+
+        alumno_ids = {
+            row[0]
+            for row in alumnos_visibles
+        }
+
+    alumnos = obtener_cartera_alumnos(
+        academia_id=academia_id,
+        q=q,
+        con_saldo=con_saldo,
+        vencidos=vencidos,
+        periodo=periodo,
+        alumno_ids=alumno_ids,
+    )
+
+    alumno_ids_filtrados = {
+        fila.alumno_id
+        for fila in alumnos
+    }
+
+    resumen = obtener_resumen_cartera_academia(
+        academia_id=academia_id,
+        periodo=periodo,
+        alumno_ids=alumno_ids_filtrados,
+    )
+
+    archivo = generar_excel_cartera(
+        resumen=resumen,
+        alumnos=alumnos,
+    )
+
+    nombre = (
+        "reporte_cartera_"
+        f"{date.today().strftime('%Y%m%d')}.xlsx"
+    )
+
+    return send_file(
+        archivo,
+        as_attachment=True,
+        download_name=nombre,
+        mimetype=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
     )
 
 @finanzas_bp.route("/cartera")

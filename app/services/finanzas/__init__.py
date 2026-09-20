@@ -56,3 +56,7 @@ from .reportes import (
     obtener_reporte_pagos,
 )
 from .tarifas import ResultadoCalculoTarifa, calcular_tarifa
+from .exportacion import (
+    generar_excel_cartera,
+    generar_excel_pagos,
+)

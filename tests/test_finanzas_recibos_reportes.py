@@ -12,6 +12,10 @@ from app.services.finanzas.reportes import (
     obtener_reporte_pagos,
 )
 from app.models.sucursal import Sucursal
+from io import BytesIO
+
+from openpyxl import load_workbook
+
 def login(client, user):
     response = client.post(
         "/auth/login",
@@ -883,3 +887,435 @@ def test_cartera_enlaza_reporte_cartera(
     assert response.status_code == 200
     assert b"Reporte de cartera" in response.data
     assert b"/finanzas/reportes/cartera" in response.data
+
+def test_exportar_excel_pagos_genera_xlsx_valido(
+    app,
+    db,
+    base_data,
+):
+    crear_pago(
+        base_data,
+        valor="75.50",
+        medio_pago="TRANSFERENCIA",
+        referencia="EXCEL-PAGO-001",
+    )
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        "/finanzas/reportes/pagos/excel"
+    )
+
+    assert response.status_code == 200
+    assert (
+        response.mimetype
+        == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert ".xlsx" in response.headers["Content-Disposition"]
+
+    libro = load_workbook(
+        BytesIO(response.data),
+        data_only=True,
+    )
+
+    assert libro.sheetnames == ["Pagos"]
+
+    hoja = libro["Pagos"]
+
+    encabezados = [
+        celda.value
+        for celda in hoja[1]
+    ]
+
+    assert encabezados == [
+        "Fecha",
+        "Alumno",
+        "Identificación",
+        "Medio de pago",
+        "Referencia",
+        "Estado",
+        "Moneda",
+        "Valor",
+        "Aplicado",
+        "Saldo sin aplicar",
+    ]
+
+    assert hoja.max_row == 2
+
+    assert hoja["D2"].value == "TRANSFERENCIA"
+    assert hoja["E2"].value == "EXCEL-PAGO-001"
+    assert hoja["F2"].value == "REGISTRADO"
+    assert hoja["G2"].value == "USD"
+    assert hoja["H2"].value == 75.5
+
+
+def test_exportar_excel_pagos_respeta_filtros(
+    app,
+    db,
+    base_data,
+):
+    crear_pago(
+        base_data,
+        valor="30.00",
+        medio_pago="EFECTIVO",
+        referencia="EXCEL-EFECTIVO",
+    )
+
+    crear_pago(
+        base_data,
+        valor="70.00",
+        medio_pago="TRANSFERENCIA",
+        referencia="EXCEL-TRANSFERENCIA",
+    )
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        "/finanzas/reportes/pagos/excel",
+        query_string={
+            "medio_pago": "TRANSFERENCIA",
+        },
+    )
+
+    assert response.status_code == 200
+
+    libro = load_workbook(
+        BytesIO(response.data),
+        data_only=True,
+    )
+
+    hoja = libro["Pagos"]
+
+    referencias = [
+        hoja.cell(
+            row=fila,
+            column=5,
+        ).value
+        for fila in range(
+            2,
+            hoja.max_row + 1,
+        )
+    ]
+
+    assert "EXCEL-TRANSFERENCIA" in referencias
+    assert "EXCEL-EFECTIVO" not in referencias
+
+
+def test_profesor_excel_pagos_limita_a_sucursal(
+    app,
+    db,
+    base_data,
+):
+    sucursal_otro = Sucursal(
+        nombre="Sucursal excel pagos externa",
+        academia_id=base_data["academia_a"].id,
+        activo=True,
+    )
+
+    _db.session.add(sucursal_otro)
+    _db.session.flush()
+
+    base_data["alumno_a2"].sucursal_id = (
+        sucursal_otro.id
+    )
+
+    _db.session.commit()
+
+    crear_pago(
+        base_data,
+        alumno_key="alumno_a1",
+        valor="60.00",
+        referencia="EXCEL-PAGO-VISIBLE",
+    )
+
+    crear_pago(
+        base_data,
+        alumno_key="alumno_a2",
+        valor="40.00",
+        referencia="EXCEL-PAGO-OCULTO",
+    )
+
+    client = app.test_client()
+    login(client, base_data["profesor_a"])
+
+    response = client.get(
+        "/finanzas/reportes/pagos/excel"
+    )
+
+    assert response.status_code == 200
+
+    libro = load_workbook(
+        BytesIO(response.data),
+        data_only=True,
+    )
+
+    hoja = libro["Pagos"]
+
+    referencias = [
+        hoja.cell(
+            row=fila,
+            column=5,
+        ).value
+        for fila in range(
+            2,
+            hoja.max_row + 1,
+        )
+    ]
+
+    assert "EXCEL-PAGO-VISIBLE" in referencias
+    assert "EXCEL-PAGO-OCULTO" not in referencias
+
+
+def test_exportar_excel_cartera_genera_resumen_y_detalle(
+    app,
+    db,
+    base_data,
+):
+    crear_obligacion(
+        base_data,
+        alumno_key="alumno_a1",
+        valor="60.00",
+    )
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        "/finanzas/reportes/cartera/excel"
+    )
+
+    assert response.status_code == 200
+    assert (
+        response.mimetype
+        == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert ".xlsx" in response.headers["Content-Disposition"]
+
+    libro = load_workbook(
+        BytesIO(response.data),
+        data_only=True,
+    )
+
+    assert libro.sheetnames == [
+        "Resumen",
+        "Cartera",
+    ]
+
+    resumen = libro["Resumen"]
+    cartera = libro["Cartera"]
+
+    indicadores = {
+        resumen.cell(
+            row=fila,
+            column=1,
+        ).value:
+        resumen.cell(
+            row=fila,
+            column=2,
+        ).value
+        for fila in range(
+            2,
+            resumen.max_row + 1,
+        )
+    }
+
+    assert indicadores["Total obligaciones"] == 60
+    assert indicadores["Saldo pendiente"] == 60
+    assert indicadores["Saldo vencido"] == 60
+
+    encabezados = [
+        celda.value
+        for celda in cartera[1]
+    ]
+
+    assert encabezados == [
+        "Alumno",
+        "Total obligaciones",
+        "Total aplicado",
+        "Saldo pendiente",
+        "Saldo vigente",
+        "Saldo vencido",
+        "Días atraso",
+        "Pagos sin aplicar",
+        "Pendientes",
+        "Parciales",
+        "Vencidas",
+        "Último pago",
+    ]
+
+    assert cartera.max_row == 3
+
+    nombres = [
+        cartera.cell(
+            row=fila,
+            column=1,
+        ).value
+        for fila in range(
+            2,
+            cartera.max_row + 1,
+        )
+    ]
+
+    nombre_esperado = (
+        f"{base_data['alumno_a1'].apellidos} "
+        f"{base_data['alumno_a1'].nombres}"
+    )
+
+    assert nombre_esperado in nombres
+
+
+def test_exportar_excel_cartera_respeta_filtro_alumno(
+    app,
+    db,
+    base_data,
+):
+    crear_obligacion(
+        base_data,
+        alumno_key="alumno_a1",
+        valor="60.00",
+    )
+
+    crear_obligacion(
+        base_data,
+        alumno_key="alumno_a2",
+        valor="40.00",
+        concepto="Pension excel alumno dos",
+    )
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        "/finanzas/reportes/cartera/excel",
+        query_string={
+            "q": base_data["alumno_a1"].nombres,
+        },
+    )
+
+    assert response.status_code == 200
+
+    libro = load_workbook(
+        BytesIO(response.data),
+        data_only=True,
+    )
+
+    resumen = libro["Resumen"]
+    cartera = libro["Cartera"]
+
+    nombres = [
+        cartera.cell(
+            row=fila,
+            column=1,
+        ).value
+        for fila in range(
+            2,
+            cartera.max_row + 1,
+        )
+    ]
+
+    nombre_visible = (
+        f"{base_data['alumno_a1'].apellidos} "
+        f"{base_data['alumno_a1'].nombres}"
+    )
+
+    nombre_oculto = (
+        f"{base_data['alumno_a2'].apellidos} "
+        f"{base_data['alumno_a2'].nombres}"
+    )
+
+    assert nombre_visible in nombres
+    assert nombre_oculto not in nombres
+
+    indicadores = {
+        resumen.cell(
+            row=fila,
+            column=1,
+        ).value:
+        resumen.cell(
+            row=fila,
+            column=2,
+        ).value
+        for fila in range(
+            2,
+            resumen.max_row + 1,
+        )
+    }
+
+    assert indicadores["Total obligaciones"] == 60
+    assert indicadores["Saldo pendiente"] == 60
+
+
+def test_profesor_excel_cartera_limita_a_sucursal(
+    app,
+    db,
+    base_data,
+):
+    sucursal_otro = Sucursal(
+        nombre="Sucursal excel cartera externa",
+        academia_id=base_data["academia_a"].id,
+        activo=True,
+    )
+
+    _db.session.add(sucursal_otro)
+    _db.session.flush()
+
+    base_data["alumno_a2"].sucursal_id = (
+        sucursal_otro.id
+    )
+
+    _db.session.commit()
+
+    crear_obligacion(
+        base_data,
+        alumno_key="alumno_a1",
+        valor="60.00",
+    )
+
+    crear_obligacion(
+        base_data,
+        alumno_key="alumno_a2",
+        valor="40.00",
+        concepto="Pension excel sucursal externa",
+    )
+
+    client = app.test_client()
+    login(client, base_data["profesor_a"])
+
+    response = client.get(
+        "/finanzas/reportes/cartera/excel"
+    )
+
+    assert response.status_code == 200
+
+    libro = load_workbook(
+        BytesIO(response.data),
+        data_only=True,
+    )
+
+    cartera = libro["Cartera"]
+
+    nombres = [
+        cartera.cell(
+            row=fila,
+            column=1,
+        ).value
+        for fila in range(
+            2,
+            cartera.max_row + 1,
+        )
+    ]
+
+    nombre_visible = (
+        f"{base_data['alumno_a1'].apellidos} "
+        f"{base_data['alumno_a1'].nombres}"
+    )
+
+    nombre_oculto = (
+        f"{base_data['alumno_a2'].apellidos} "
+        f"{base_data['alumno_a2'].nombres}"
+    )
+
+    assert nombre_visible in nombres
+    assert nombre_oculto not in nombres

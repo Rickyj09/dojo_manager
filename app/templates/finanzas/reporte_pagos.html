@@ -20,13 +20,32 @@ Reporte financiero de pagos
     </p>
   </div>
 
-  <a
-    class="btn btn-outline-secondary"
-    href="{{ url_for('finanzas.cartera') }}"
-  >
-    <i class="bi bi-arrow-left"></i>
-    Cartera
-  </a>
+  <div class="d-flex flex-wrap gap-2">
+
+    <a
+      class="btn btn-success"
+      href="{{ url_for(
+        'finanzas.reporte_pagos_excel',
+        q=q,
+        medio_pago=medio_pago,
+        estado=estado,
+        fecha_desde=fecha_desde,
+        fecha_hasta=fecha_hasta
+      ) }}"
+    >
+      <i class="bi bi-file-earmark-excel"></i>
+      Exportar Excel
+    </a>
+
+    <a
+      class="btn btn-outline-secondary"
+      href="{{ url_for('finanzas.cartera') }}"
+    >
+      <i class="bi bi-arrow-left"></i>
+      Cartera
+    </a>
+
+  </div>
 </div>
 
 
@@ -35,6 +54,7 @@ Reporte financiero de pagos
   <div class="col-md-3">
     <div class="card shadow-sm h-100">
       <div class="card-body">
+
         <small class="text-muted">
           Pagos registrados
         </small>
@@ -42,13 +62,16 @@ Reporte financiero de pagos
         <h4 class="mb-0">
           {{ resumen.cantidad_registrados }}
         </h4>
+
       </div>
     </div>
   </div>
 
+
   <div class="col-md-3">
     <div class="card shadow-sm h-100">
       <div class="card-body">
+
         <small class="text-muted">
           Total recibido
         </small>
@@ -58,13 +81,16 @@ Reporte financiero de pagos
             resumen.total_recibido
           ) }}
         </h4>
+
       </div>
     </div>
   </div>
 
+
   <div class="col-md-3">
     <div class="card shadow-sm h-100">
       <div class="card-body">
+
         <small class="text-muted">
           Total aplicado
         </small>
@@ -74,13 +100,16 @@ Reporte financiero de pagos
             resumen.total_aplicado
           ) }}
         </h4>
+
       </div>
     </div>
   </div>
 
+
   <div class="col-md-3">
     <div class="card shadow-sm h-100">
       <div class="card-body">
+
         <small class="text-muted">
           Saldo sin aplicar
         </small>
@@ -97,6 +126,7 @@ Reporte financiero de pagos
             pago(s) anulado(s)
           </div>
         {% endif %}
+
       </div>
     </div>
   </div>
@@ -126,6 +156,7 @@ Reporte financiero de pagos
         >
       </div>
 
+
       <div class="col-md-2">
         <label class="form-label">
           Desde
@@ -139,6 +170,7 @@ Reporte financiero de pagos
         >
       </div>
 
+
       <div class="col-md-2">
         <label class="form-label">
           Hasta
@@ -151,6 +183,7 @@ Reporte financiero de pagos
           value="{{ fecha_hasta }}"
         >
       </div>
+
 
       <div class="col-md-2">
         <label class="form-label">
@@ -178,6 +211,7 @@ Reporte financiero de pagos
         </select>
       </div>
 
+
       <div class="col-md-2">
         <label class="form-label">
           Estado
@@ -204,6 +238,7 @@ Reporte financiero de pagos
         </select>
       </div>
 
+
       <div class="col-md-1">
         <button
           class="btn btn-primary w-100"
@@ -216,9 +251,12 @@ Reporte financiero de pagos
 
     </form>
 
+
     {% if q or fecha_desde or fecha_hasta
           or medio_pago or estado %}
+
       <div class="mt-3">
+
         <a
           class="btn btn-outline-secondary btn-sm"
           href="{{ url_for(
@@ -227,7 +265,9 @@ Reporte financiero de pagos
         >
           Limpiar filtros
         </a>
+
       </div>
+
     {% endif %}
 
   </div>
@@ -256,9 +296,11 @@ Reporte financiero de pagos
         </tr>
       </thead>
 
+
       <tbody>
 
         {% for fila in pagos %}
+
           <tr>
 
             <td>
@@ -266,6 +308,7 @@ Reporte financiero de pagos
                 "%d/%m/%Y"
               ) }}
             </td>
+
 
             <td>
               <div>
@@ -279,13 +322,16 @@ Reporte financiero de pagos
               {% endif %}
             </td>
 
+
             <td>
               {{ fila.medio_pago }}
             </td>
 
+
             <td>
               {{ fila.referencia or "-" }}
             </td>
+
 
             <td class="text-end">
               $ {{ "%.2f"|format(
@@ -293,11 +339,13 @@ Reporte financiero de pagos
               ) }}
             </td>
 
+
             <td class="text-end">
               $ {{ "%.2f"|format(
                 fila.total_aplicado
               ) }}
             </td>
+
 
             <td class="text-end">
               $ {{ "%.2f"|format(
@@ -305,17 +353,23 @@ Reporte financiero de pagos
               ) }}
             </td>
 
+
             <td>
               {% if fila.estado == "ANULADO" %}
+
                 <span class="badge text-bg-danger">
                   ANULADO
                 </span>
+
               {% else %}
+
                 <span class="badge text-bg-success">
                   REGISTRADO
                 </span>
+
               {% endif %}
             </td>
+
 
             <td class="text-end text-nowrap">
 

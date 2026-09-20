@@ -21,13 +21,30 @@ Reporte financiero de cartera
     </p>
   </div>
 
-  <a
-    class="btn btn-outline-secondary"
-    href="{{ url_for('finanzas.cartera') }}"
-  >
-    <i class="bi bi-arrow-left"></i>
-    Cartera
-  </a>
+  <div class="d-flex flex-wrap gap-2">
+
+    <a
+      class="btn btn-success"
+      href="{{ url_for(
+        'finanzas.reporte_cartera_excel',
+        q=q,
+        saldo=filtro,
+        periodo=periodo
+      ) }}"
+    >
+      <i class="bi bi-file-earmark-excel"></i>
+      Exportar Excel
+    </a>
+
+    <a
+      class="btn btn-outline-secondary"
+      href="{{ url_for('finanzas.cartera') }}"
+    >
+      <i class="bi bi-arrow-left"></i>
+      Cartera
+    </a>
+
+  </div>
 </div>
 
 
@@ -36,6 +53,7 @@ Reporte financiero de cartera
   <div class="col-md-3">
     <div class="card shadow-sm h-100">
       <div class="card-body">
+
         <small class="text-muted">
           Saldo pendiente
         </small>
@@ -45,13 +63,16 @@ Reporte financiero de cartera
             resumen.saldo_pendiente
           ) }}
         </h4>
+
       </div>
     </div>
   </div>
 
+
   <div class="col-md-3">
     <div class="card shadow-sm h-100">
       <div class="card-body">
+
         <small class="text-muted">
           Saldo vencido
         </small>
@@ -61,13 +82,16 @@ Reporte financiero de cartera
             resumen.saldo_vencido
           ) }}
         </h4>
+
       </div>
     </div>
   </div>
 
+
   <div class="col-md-3">
     <div class="card shadow-sm h-100">
       <div class="card-body">
+
         <small class="text-muted">
           Saldo vigente
         </small>
@@ -77,13 +101,16 @@ Reporte financiero de cartera
             resumen.saldo_vigente
           ) }}
         </h4>
+
       </div>
     </div>
   </div>
 
+
   <div class="col-md-3">
     <div class="card shadow-sm h-100">
       <div class="card-body">
+
         <small class="text-muted">
           Pagos sin aplicar
         </small>
@@ -93,6 +120,7 @@ Reporte financiero de cartera
             resumen.saldo_pagos_sin_aplicar
           ) }}
         </h4>
+
       </div>
     </div>
   </div>
@@ -122,6 +150,7 @@ Reporte financiero de cartera
         </h5>
       </div>
 
+
       <div class="col-md-2">
         <small class="text-muted">
           1 - 30 días
@@ -133,6 +162,7 @@ Reporte financiero de cartera
           ) }}
         </h5>
       </div>
+
 
       <div class="col-md-2">
         <small class="text-muted">
@@ -146,6 +176,7 @@ Reporte financiero de cartera
         </h5>
       </div>
 
+
       <div class="col-md-2">
         <small class="text-muted">
           61 - 90 días
@@ -158,6 +189,7 @@ Reporte financiero de cartera
         </h5>
       </div>
 
+
       <div class="col-md-2">
         <small class="text-muted">
           Más de 90 días
@@ -169,6 +201,7 @@ Reporte financiero de cartera
           ) }}
         </h5>
       </div>
+
 
       <div class="col-md-2">
         <small class="text-muted">
@@ -210,6 +243,7 @@ Reporte financiero de cartera
         >
       </div>
 
+
       <div class="col-md-3">
         <label class="form-label">
           Saldo
@@ -250,6 +284,7 @@ Reporte financiero de cartera
         </select>
       </div>
 
+
       <div class="col-md-2">
         <label class="form-label">
           Periodo
@@ -263,6 +298,7 @@ Reporte financiero de cartera
         >
       </div>
 
+
       <div class="col-md-2">
         <button
           class="btn btn-primary w-100"
@@ -274,6 +310,7 @@ Reporte financiero de cartera
       </div>
 
     </form>
+
 
     {% if q or filtro != "todos" or periodo %}
 
@@ -296,9 +333,11 @@ Reporte financiero de cartera
 
 <div class="card shadow-sm">
 
-  <div class="card-header d-flex
-              justify-content-between
-              align-items-center">
+  <div
+    class="card-header d-flex
+           justify-content-between
+           align-items-center"
+  >
 
     <span class="fw-bold">
       Detalle por alumno
@@ -309,6 +348,7 @@ Reporte financiero de cartera
     </span>
 
   </div>
+
 
   <div class="card-body table-responsive">
 
@@ -335,6 +375,7 @@ Reporte financiero de cartera
 
       </thead>
 
+
       <tbody>
 
         {% for fila in alumnos %}
@@ -345,11 +386,13 @@ Reporte financiero de cartera
               {{ fila.nombre }}
             </td>
 
+
             <td class="text-end">
               $ {{ "%.2f"|format(
                 fila.total_obligaciones
               ) }}
             </td>
+
 
             <td class="text-end">
               $ {{ "%.2f"|format(
@@ -357,11 +400,13 @@ Reporte financiero de cartera
               ) }}
             </td>
 
+
             <td class="text-end">
               $ {{ "%.2f"|format(
                 fila.saldo_pendiente
               ) }}
             </td>
+
 
             <td class="text-end">
               $ {{ "%.2f"|format(
@@ -369,11 +414,13 @@ Reporte financiero de cartera
               ) }}
             </td>
 
+
             <td class="text-end">
               $ {{ "%.2f"|format(
                 fila.saldo_vencido
               ) }}
             </td>
+
 
             <td>
               {% if fila.cantidad_obligaciones_vencidas %}
@@ -383,11 +430,13 @@ Reporte financiero de cartera
               {% endif %}
             </td>
 
+
             <td class="text-end">
               $ {{ "%.2f"|format(
                 fila.saldo_pagos_sin_aplicar
               ) }}
             </td>
+
 
             <td class="text-end">
 
