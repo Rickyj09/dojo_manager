@@ -8,8 +8,10 @@ from app.services.finanzas.pagos import (
     aplicar_pago_a_obligaciones,
     registrar_pago,
 )
-
-
+from app.services.finanzas.reportes import (
+    obtener_reporte_pagos,
+)
+from app.models.sucursal import Sucursal
 def login(client, user):
     response = client.post(
         "/auth/login",
@@ -30,11 +32,13 @@ def crear_pago(
     medio_pago="EFECTIVO",
     referencia=None,
     observacion=None,
+    fecha_pago=date(2026, 9, 5),
 ):
+
     pago = registrar_pago(
         academia_id=base_data[academia_key].id,
         alumno_id=base_data[alumno_key].id,
-        fecha_pago=date(2026, 9, 5),
+        fecha_pago=fecha_pago,
         valor=Decimal(valor),
         medio_pago=medio_pago,
         moneda="USD",
@@ -300,3 +304,406 @@ def test_recibo_indica_documento_no_tributario(
         b"No constituye factura ni comprobante tributario."
         in response.data
     )
+def test_reporte_pagos_vacio(db, base_data):
+    resumen, filas = obtener_reporte_pagos(
+        academia_id=base_data["academia_a"].id,
+    )
+
+    assert filas == []
+    assert resumen.cantidad_pagos == 0
+    assert resumen.cantidad_registrados == 0
+    assert resumen.cantidad_anulados == 0
+    assert resumen.total_recibido == Decimal("0.00")
+    assert resumen.total_aplicado == Decimal("0.00")
+    assert resumen.saldo_sin_aplicar == Decimal("0.00")
+
+
+def test_reporte_pagos_calcula_totales(db, base_data):
+    pago_1 = crear_pago(
+        base_data,
+        valor="60.00",
+        medio_pago="TRANSFERENCIA",
+        referencia="TRX-001",
+    )
+
+    crear_pago(
+        base_data,
+        valor="40.00",
+        medio_pago="EFECTIVO",
+        referencia="CAJA-001",
+    )
+
+    obligacion = crear_obligacion(
+        base_data,
+        valor="60.00",
+        concepto="Pension septiembre",
+    )
+
+    aplicar_pago_a_obligaciones(
+        academia_id=pago_1.academia_id,
+        pago_id=pago_1.id,
+        aplicaciones=[
+            {
+                "obligacion_financiera_id": obligacion.id,
+                "valor_aplicado": Decimal("50.00"),
+            }
+        ],
+    )
+
+    _db.session.commit()
+
+    resumen, filas = obtener_reporte_pagos(
+        academia_id=base_data["academia_a"].id,
+    )
+
+    assert len(filas) == 2
+    assert resumen.cantidad_pagos == 2
+    assert resumen.cantidad_registrados == 2
+    assert resumen.cantidad_anulados == 0
+    assert resumen.total_recibido == Decimal("100.00")
+    assert resumen.total_aplicado == Decimal("50.00")
+    assert resumen.saldo_sin_aplicar == Decimal("50.00")
+
+
+def test_reporte_pagos_anulados_no_suman_totales(db, base_data):
+    crear_pago(
+        base_data,
+        valor="60.00",
+    )
+
+    pago_anulado = crear_pago(
+        base_data,
+        valor="40.00",
+    )
+
+    anular_pago(
+        academia_id=pago_anulado.academia_id,
+        pago_id=pago_anulado.id,
+    )
+
+    _db.session.commit()
+
+    resumen, filas = obtener_reporte_pagos(
+        academia_id=base_data["academia_a"].id,
+    )
+
+    assert len(filas) == 2
+    assert resumen.cantidad_pagos == 2
+    assert resumen.cantidad_registrados == 1
+    assert resumen.cantidad_anulados == 1
+    assert resumen.total_recibido == Decimal("60.00")
+
+
+def test_reporte_pagos_filtra_medio_pago(db, base_data):
+    crear_pago(
+        base_data,
+        valor="30.00",
+        medio_pago="EFECTIVO",
+    )
+
+    crear_pago(
+        base_data,
+        valor="70.00",
+        medio_pago="TRANSFERENCIA",
+    )
+
+    resumen, filas = obtener_reporte_pagos(
+        academia_id=base_data["academia_a"].id,
+        medio_pago="TRANSFERENCIA",
+    )
+
+    assert len(filas) == 1
+    assert filas[0].medio_pago == "TRANSFERENCIA"
+    assert resumen.total_recibido == Decimal("70.00")
+
+
+def test_reporte_pagos_filtra_estado(db, base_data):
+    crear_pago(
+        base_data,
+        valor="50.00",
+    )
+
+    pago_anulado = crear_pago(
+        base_data,
+        valor="25.00",
+    )
+
+    anular_pago(
+        academia_id=pago_anulado.academia_id,
+        pago_id=pago_anulado.id,
+    )
+
+    _db.session.commit()
+
+    resumen, filas = obtener_reporte_pagos(
+        academia_id=base_data["academia_a"].id,
+        estado="ANULADO",
+    )
+
+    assert len(filas) == 1
+    assert filas[0].estado == "ANULADO"
+    assert resumen.cantidad_anulados == 1
+    assert resumen.total_recibido == Decimal("0.00")
+
+
+def test_reporte_pagos_filtra_alumno(db, base_data):
+    crear_pago(
+        base_data,
+        alumno_key="alumno_a1",
+        valor="40.00",
+    )
+
+    crear_pago(
+        base_data,
+        alumno_key="alumno_a2",
+        valor="30.00",
+    )
+
+    termino = base_data["alumno_a1"].nombres
+
+    resumen, filas = obtener_reporte_pagos(
+        academia_id=base_data["academia_a"].id,
+        q=termino,
+    )
+
+    assert len(filas) == 1
+    assert filas[0].alumno_id == base_data["alumno_a1"].id
+    assert resumen.total_recibido == Decimal("40.00")
+
+
+def test_reporte_pagos_respeta_tenant(db, base_data):
+    crear_pago(
+        base_data,
+        academia_key="academia_a",
+        alumno_key="alumno_a1",
+        valor="40.00",
+    )
+
+    crear_pago(
+        base_data,
+        academia_key="academia_b",
+        alumno_key="alumno_b1",
+        valor="90.00",
+    )
+
+    resumen, filas = obtener_reporte_pagos(
+        academia_id=base_data["academia_a"].id,
+    )
+
+    assert len(filas) == 1
+    assert filas[0].alumno_id == base_data["alumno_a1"].id
+    assert resumen.total_recibido == Decimal("40.00")
+
+
+def test_admin_puede_ver_reporte_pagos(app, db, base_data):
+    pago = crear_pago(
+        base_data,
+        valor="75.00",
+        medio_pago="TRANSFERENCIA",
+        referencia="REPORTE-001",
+    )
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        "/finanzas/reportes/pagos"
+    )
+
+    assert response.status_code == 200
+    assert b"Reporte financiero de pagos" in response.data
+    assert b"REPORTE-001" in response.data
+    assert b"75.00" in response.data
+
+    ruta_recibo = (
+        f"/finanzas/pagos/{pago.id}/recibo"
+    ).encode()
+
+    assert ruta_recibo in response.data
+
+
+def test_reporte_pagos_filtros_web(app, db, base_data):
+    crear_pago(
+        base_data,
+        valor="30.00",
+        medio_pago="EFECTIVO",
+        referencia="EF-001",
+    )
+
+    crear_pago(
+        base_data,
+        valor="70.00",
+        medio_pago="TRANSFERENCIA",
+        referencia="TR-001",
+    )
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        "/finanzas/reportes/pagos"
+        "?medio_pago=TRANSFERENCIA"
+    )
+
+    assert response.status_code == 200
+    assert b"TR-001" in response.data
+    assert b"EF-001" not in response.data
+
+
+def test_cartera_enlaza_reporte_pagos(app, db, base_data):
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        "/finanzas/cartera"
+    )
+
+    assert response.status_code == 200
+    assert b"Reporte de pagos" in response.data
+    assert b"/finanzas/reportes/pagos" in response.data
+def test_profesor_reporte_pagos_limita_a_sucursal(
+    app,
+    db,
+    base_data,
+):
+    sucursal_otro = Sucursal(
+        nombre="Sucursal pagos externa",
+        academia_id=base_data["academia_a"].id,
+        activo=True,
+    )
+
+    _db.session.add(sucursal_otro)
+    _db.session.flush()
+
+    base_data["alumno_a2"].sucursal_id = sucursal_otro.id
+    _db.session.commit()
+
+    crear_pago(
+        base_data,
+        alumno_key="alumno_a1",
+        valor="60.00",
+        referencia="VISIBLE-PROFESOR",
+    )
+
+    crear_pago(
+        base_data,
+        alumno_key="alumno_a2",
+        valor="40.00",
+        referencia="OCULTO-PROFESOR",
+    )
+
+    client = app.test_client()
+    login(client, base_data["profesor_a"])
+
+    response = client.get(
+        "/finanzas/reportes/pagos"
+    )
+
+    assert response.status_code == 200
+    assert b"VISIBLE-PROFESOR" in response.data
+    assert b"OCULTO-PROFESOR" not in response.data
+
+
+def test_admin_reporte_pagos_ve_toda_academia(
+    app,
+    db,
+    base_data,
+):
+    sucursal_otro = Sucursal(
+        nombre="Sucursal pagos admin",
+        academia_id=base_data["academia_a"].id,
+        activo=True,
+    )
+
+    _db.session.add(sucursal_otro)
+    _db.session.flush()
+
+    base_data["alumno_a2"].sucursal_id = sucursal_otro.id
+    _db.session.commit()
+
+    crear_pago(
+        base_data,
+        alumno_key="alumno_a1",
+        valor="60.00",
+        referencia="ADMIN-MATRIZ",
+    )
+
+    crear_pago(
+        base_data,
+        alumno_key="alumno_a2",
+        valor="40.00",
+        referencia="ADMIN-OTRA-SUCURSAL",
+    )
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        "/finanzas/reportes/pagos"
+    )
+
+    assert response.status_code == 200
+    assert b"ADMIN-MATRIZ" in response.data
+    assert b"ADMIN-OTRA-SUCURSAL" in response.data
+
+
+def test_reporte_pagos_filtra_rango_fechas(
+    app,
+    db,
+    base_data,
+):
+    crear_pago(
+        base_data,
+        valor="30.00",
+        referencia="PAGO-SEPTIEMBRE",
+        fecha_pago=date(2026, 9, 5),
+    )
+
+    crear_pago(
+        base_data,
+        valor="70.00",
+        referencia="PAGO-OCTUBRE",
+        fecha_pago=date(2026, 10, 10),
+    )
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        "/finanzas/reportes/pagos"
+        "?fecha_desde=2026-10-01"
+        "&fecha_hasta=2026-10-31"
+    )
+
+    assert response.status_code == 200
+    assert b"PAGO-OCTUBRE" in response.data
+    assert b"PAGO-SEPTIEMBRE" not in response.data
+
+
+def test_reporte_pagos_rango_fechas_invalido(
+    app,
+    db,
+    base_data,
+):
+    crear_pago(
+        base_data,
+        valor="50.00",
+        referencia="NO-DEBE-MOSTRARSE",
+    )
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        "/finanzas/reportes/pagos"
+        "?fecha_desde=2026-10-31"
+        "&fecha_hasta=2026-10-01",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert (
+        b"La fecha desde no puede ser posterior"
+        in response.data
+    )
+    assert b"NO-DEBE-MOSTRARSE" not in response.data

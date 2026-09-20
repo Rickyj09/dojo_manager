@@ -43,6 +43,8 @@ from app.services.finanzas import (
     obtener_resumen_cartera_academia,
     registrar_pago,
     resolver_ruta_comprobante,
+    ESTADOS_PAGO_FINANCIERO,
+    obtener_reporte_pagos,
 )
 from app.services.finanzas.familias import (
     FinanzasError,
@@ -1561,6 +1563,113 @@ def alternar_frecuencia_activa(frecuencia_id):
     db.session.commit()
     flash("Frecuencia activada." if frecuencia.activo else "Frecuencia desactivada.", "success")
     return redirect(url_for("finanzas.frecuencias"))
+@finanzas_bp.route("/reportes/pagos")
+@login_required
+def reporte_pagos():
+    if not _puede_ver_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+
+    q = (
+        request.args.get("q") or ""
+    ).strip()
+
+    medio_pago = (
+        request.args.get("medio_pago") or ""
+    ).strip().upper()
+
+    estado = (
+        request.args.get("estado") or ""
+    ).strip().upper()
+
+    fecha_desde_raw = (
+        request.args.get("fecha_desde") or ""
+    ).strip()
+
+    fecha_hasta_raw = (
+        request.args.get("fecha_hasta") or ""
+    ).strip()
+
+    try:
+        fecha_desde = (
+            date.fromisoformat(fecha_desde_raw)
+            if fecha_desde_raw
+            else None
+        )
+
+        fecha_hasta = (
+            date.fromisoformat(fecha_hasta_raw)
+            if fecha_hasta_raw
+            else None
+        )
+
+    except ValueError:
+        abort(400)
+
+    if (
+        medio_pago
+        and medio_pago not in MEDIOS_PAGO_FINANCIERO
+    ):
+        medio_pago = ""
+
+    if (
+        estado
+        and estado not in ESTADOS_PAGO_FINANCIERO
+    ):
+        estado = ""
+
+    alumno_ids = None
+
+    if current_user.has_role("PROFESOR"):
+        alumnos_visibles = (
+            Alumno.query
+            .filter_by(
+                academia_id=academia_id,
+                sucursal_id=current_user.sucursal_id,
+            )
+            .with_entities(
+                Alumno.id
+            )
+            .all()
+        )
+
+        alumno_ids = {
+            row[0]
+            for row in alumnos_visibles
+        }
+
+    try:
+        resumen, pagos = obtener_reporte_pagos(
+            academia_id=academia_id,
+            fecha_desde=fecha_desde,
+            fecha_hasta=fecha_hasta,
+            q=q,
+            medio_pago=medio_pago or None,
+            estado=estado or None,
+            alumno_ids=alumno_ids,
+        )
+
+    except FinanzasError as exc:
+        flash(str(exc), "danger")
+
+        resumen, pagos = obtener_reporte_pagos(
+            academia_id=academia_id,
+            alumno_ids=set(),
+        )
+
+    return render_template(
+        "finanzas/reporte_pagos.html",
+        resumen=resumen,
+        pagos=pagos,
+        q=q,
+        medio_pago=medio_pago,
+        estado=estado,
+        fecha_desde=fecha_desde_raw,
+        fecha_hasta=fecha_hasta_raw,
+        medios_pago=MEDIOS_PAGO_FINANCIERO,
+        estados_pago=ESTADOS_PAGO_FINANCIERO,
+    )
 
 
 @finanzas_bp.route("/cartera")
