@@ -7,6 +7,7 @@ from werkzeug.exceptions import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from app.models.alumno import Alumno
+from app.models.academia import Academia
 from app.models.finanzas import (
     AlumnoGrupoFamiliar,
     AlumnoPlanFinanciero,
@@ -63,6 +64,7 @@ from app.services.finanzas.tarifas import calcular_tarifa
 from app.services.finanzas.tarifarios import (
     ESTADOS_TARIFARIO, alternar_tarifa, guardar_tarifa, guardar_tarifario, tarifas_editables,
 )
+
 
 
 finanzas_bp = Blueprint("finanzas", __name__, url_prefix="/finanzas")
@@ -1694,6 +1696,44 @@ def detalle_pago(pago_id):
         obligaciones_aplicables=obligaciones_aplicables,
         comprobantes=comprobantes,
         puede_escribir=_puede_escribir_finanzas(),
+    )
+
+@finanzas_bp.route("/pagos/<int:pago_id>/recibo")
+@login_required
+def recibo_pago(pago_id):
+    if not _puede_ver_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+
+    try:
+        detalle = obtener_detalle_pago(
+            academia_id=academia_id,
+            pago_id=pago_id,
+        )
+    except FinanzasError:
+        abort(404)
+
+    _validar_alumno_visible(
+        academia_id,
+        detalle.pago.alumno_id,
+    )
+
+    academia = db.session.get(
+        Academia,
+        academia_id,
+    )
+
+    if academia is None:
+        abort(404)
+
+    numero_recibo = f"REC-{detalle.pago.id:06d}"
+
+    return render_template(
+        "finanzas/recibo_pago.html",
+        detalle=detalle,
+        academia=academia,
+        numero_recibo=numero_recibo,
     )
 
 

@@ -10,9 +10,25 @@
     <h3 class="mb-1">Pago financiero</h3>
     <p class="text-muted mb-0">{{ alumno.nombres }} {{ alumno.apellidos }}</p>
   </div>
-  <a href="{{ url_for('finanzas.estado_cuenta_alumno', alumno_id=alumno.id) }}" class="btn btn-outline-secondary">
-    <i class="bi bi-arrow-left"></i> Estado
+  <div class="d-flex gap-2">
+  <a
+    href="{{ url_for('finanzas.recibo_pago', pago_id=pago.id) }}"
+    class="btn btn-outline-primary"
+    target="_blank"
+    rel="noopener"
+  >
+    <i class="bi bi-receipt"></i>
+    Ver recibo
   </a>
+
+  <a
+    href="{{ url_for('finanzas.estado_cuenta_alumno', alumno_id=alumno.id) }}"
+    class="btn btn-outline-secondary"
+  >
+    <i class="bi bi-arrow-left"></i>
+    Estado
+  </a>
+</div>
 </div>
 
 <div class="row g-3 mb-4">
