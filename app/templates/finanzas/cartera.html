@@ -17,14 +17,22 @@
       Obligaciones y pagos del dominio financiero nuevo.
     </p>
   </div>
-
+  <div class="d-flex gap-2">
   <a
     class="btn btn-outline-primary"
     href="{{ url_for('finanzas.reporte_pagos') }}"
   >
-    <i class="bi bi-bar-chart"></i>
+    <i class="bi bi-cash-stack"></i>
     Reporte de pagos
   </a>
+  <a
+    class="btn btn-outline-primary"
+    href="{{ url_for('finanzas.reporte_cartera') }}"
+  >
+    <i class="bi bi-bar-chart"></i>
+    Reporte de cartera
+  </a>
+</div>
 </div>
 
 <div class="row g-3 mb-4">

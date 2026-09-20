@@ -1671,6 +1671,84 @@ def reporte_pagos():
         estados_pago=ESTADOS_PAGO_FINANCIERO,
     )
 
+@finanzas_bp.route("/reportes/cartera")
+@login_required
+def reporte_cartera():
+    if not _puede_ver_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+
+    q = (
+        request.args.get("q") or ""
+    ).strip()
+
+    filtro = (
+        request.args.get("saldo") or "todos"
+    ).strip()
+
+    periodo = (
+        request.args.get("periodo") or ""
+    ).strip() or None
+
+    if filtro not in {
+        "todos",
+        "con_saldo",
+        "vencidos",
+    }:
+        filtro = "todos"
+
+    con_saldo = filtro == "con_saldo"
+    vencidos = filtro == "vencidos"
+
+    alumno_ids = None
+
+    if current_user.has_role("PROFESOR"):
+        alumnos_visibles = (
+            Alumno.query
+            .filter_by(
+                academia_id=academia_id,
+                sucursal_id=current_user.sucursal_id,
+            )
+            .with_entities(
+                Alumno.id
+            )
+            .all()
+        )
+
+        alumno_ids = {
+            row[0]
+            for row in alumnos_visibles
+        }
+
+    alumnos = obtener_cartera_alumnos(
+        academia_id=academia_id,
+        q=q,
+        con_saldo=con_saldo,
+        vencidos=vencidos,
+        periodo=periodo,
+        alumno_ids=alumno_ids,
+    )
+
+    alumno_ids_filtrados = {
+        fila.alumno_id
+        for fila in alumnos
+    }
+
+    resumen = obtener_resumen_cartera_academia(
+        academia_id=academia_id,
+        periodo=periodo,
+        alumno_ids=alumno_ids_filtrados,
+    )
+
+    return render_template(
+        "finanzas/reporte_cartera.html",
+        resumen=resumen,
+        alumnos=alumnos,
+        q=q,
+        filtro=filtro,
+        periodo=periodo or "",
+    )
 
 @finanzas_bp.route("/cartera")
 @login_required

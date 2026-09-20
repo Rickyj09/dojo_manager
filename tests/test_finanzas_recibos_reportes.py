@@ -22,7 +22,6 @@ def login(client, user):
     )
     assert response.status_code == 302
 
-
 def crear_pago(
     base_data,
     *,
@@ -707,3 +706,180 @@ def test_reporte_pagos_rango_fechas_invalido(
         in response.data
     )
     assert b"NO-DEBE-MOSTRARSE" not in response.data
+def test_admin_puede_ver_reporte_cartera(
+    app,
+    db,
+    base_data,
+):
+    crear_obligacion(
+        base_data,
+        alumno_key="alumno_a1",
+        valor="60.00",
+        concepto="Pension septiembre",
+    )
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        "/finanzas/reportes/cartera"
+    )
+
+    assert response.status_code == 200
+    assert b"Reporte financiero de cartera" in response.data
+    assert b"Antig\xc3\xbcedad de cartera" in response.data
+
+    nombre = (
+        f"{base_data['alumno_a1'].apellidos} "
+        f"{base_data['alumno_a1'].nombres}"
+    ).encode()
+
+    assert nombre in response.data
+    assert b"60.00" in response.data
+
+
+def test_reporte_cartera_muestra_aging(
+    app,
+    db,
+    base_data,
+):
+    crear_obligacion(
+        base_data,
+        valor="60.00",
+    )
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        "/finanzas/reportes/cartera"
+    )
+
+    assert response.status_code == 200
+    assert b"1 - 30 d\xc3\xadas" in response.data
+    assert b"31 - 60 d\xc3\xadas" in response.data
+    assert b"61 - 90 d\xc3\xadas" in response.data
+    assert b"M\xc3\xa1s de 90 d\xc3\xadas" in response.data
+    assert b"Sin vencimiento" in response.data
+
+
+def test_reporte_cartera_filtra_alumno_y_resumen(
+    app,
+    db,
+    base_data,
+):
+    crear_obligacion(
+        base_data,
+        alumno_key="alumno_a1",
+        valor="60.00",
+    )
+
+    crear_obligacion(
+        base_data,
+        alumno_key="alumno_a2",
+        valor="40.00",
+        concepto="Pension alumno dos",
+    )
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    termino = base_data["alumno_a1"].nombres
+
+    response = client.get(
+        "/finanzas/reportes/cartera",
+        query_string={
+            "q": termino,
+        },
+    )
+
+    assert response.status_code == 200
+
+    nombre_visible = (
+        f"{base_data['alumno_a1'].apellidos} "
+        f"{base_data['alumno_a1'].nombres}"
+    ).encode()
+
+    nombre_oculto = (
+        f"{base_data['alumno_a2'].apellidos} "
+        f"{base_data['alumno_a2'].nombres}"
+    ).encode()
+
+    assert nombre_visible in response.data
+    assert nombre_oculto not in response.data
+
+    # El resumen debe corresponder también
+    # al resultado filtrado, no a toda la academia.
+    assert b"60.00" in response.data
+    assert b"100.00" not in response.data
+
+
+def test_profesor_reporte_cartera_limita_a_sucursal(
+    app,
+    db,
+    base_data,
+):
+    sucursal_otro = Sucursal(
+        nombre="Sucursal cartera externa",
+        academia_id=base_data["academia_a"].id,
+        activo=True,
+    )
+
+    _db.session.add(sucursal_otro)
+    _db.session.flush()
+
+    base_data["alumno_a2"].sucursal_id = sucursal_otro.id
+    _db.session.commit()
+
+    crear_obligacion(
+        base_data,
+        alumno_key="alumno_a1",
+        valor="60.00",
+    )
+
+    crear_obligacion(
+        base_data,
+        alumno_key="alumno_a2",
+        valor="40.00",
+        concepto="Pension sucursal externa",
+    )
+
+    client = app.test_client()
+    login(client, base_data["profesor_a"])
+
+    response = client.get(
+        "/finanzas/reportes/cartera"
+    )
+
+    assert response.status_code == 200
+
+    nombre_visible = (
+        f"{base_data['alumno_a1'].apellidos} "
+        f"{base_data['alumno_a1'].nombres}"
+    ).encode()
+
+    nombre_oculto = (
+        f"{base_data['alumno_a2'].apellidos} "
+        f"{base_data['alumno_a2'].nombres}"
+    ).encode()
+
+    assert nombre_visible in response.data
+    assert nombre_oculto not in response.data
+    assert b"40.00" not in response.data
+
+
+def test_cartera_enlaza_reporte_cartera(
+    app,
+    db,
+    base_data,
+):
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        "/finanzas/cartera"
+    )
+
+    assert response.status_code == 200
+    assert b"Reporte de cartera" in response.data
+    assert b"/finanzas/reportes/cartera" in response.data
