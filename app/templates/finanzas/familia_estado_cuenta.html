@@ -1,0 +1,295 @@
+{% extends "base_admin.html" %}
+
+{% block title %}Estado financiero familiar{% endblock %}
+
+{% block content %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
+  <div>
+    <h3 class="mb-1">Estado financiero familiar</h3>
+
+    <p class="text-muted mb-0">
+      {{ familia.nombre }} — {{ familia.codigo }}
+    </p>
+  </div>
+
+  <div class="d-flex gap-2">
+    <a
+      class="btn btn-outline-secondary"
+      href="{{ url_for(
+        'finanzas.familia_detalle',
+        grupo_familiar_id=familia.id
+      ) }}"
+    >
+      <i class="bi bi-arrow-left"></i>
+      Familia
+    </a>
+
+    <a
+      class="btn btn-outline-secondary"
+      href="{{ url_for('finanzas.cartera') }}"
+    >
+      Cartera
+    </a>
+  </div>
+</div>
+
+<div class="alert alert-info">
+  Esta es una vista consolidada de los integrantes activos de la
+  familia. Las obligaciones, pagos y saldos continúan perteneciendo
+  individualmente a cada alumno.
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+
+    <form class="row g-2 align-items-end" method="get">
+
+      <div class="col-md-4">
+        <label class="form-label" for="periodo">
+          Periodo
+        </label>
+
+        <input
+          class="form-control"
+          id="periodo"
+          name="periodo"
+          value="{{ periodo }}"
+          placeholder="YYYY-MM"
+        >
+      </div>
+
+      <div class="col-md-2">
+        <button
+          class="btn btn-primary w-100"
+          type="submit"
+        >
+          <i class="bi bi-search"></i>
+          Consultar
+        </button>
+      </div>
+
+      <div class="col-md-2">
+        <a
+          class="btn btn-outline-secondary w-100"
+          href="{{ url_for(
+            'finanzas.estado_cuenta_familia',
+            grupo_familiar_id=familia.id
+          ) }}"
+        >
+          Limpiar
+        </a>
+      </div>
+
+    </form>
+
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+
+  <div class="col-md-2">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <small class="text-muted">
+          Integrantes activos
+        </small>
+
+        <h4 class="mb-0">
+          {{ integrantes|length }}
+        </h4>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-2">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <small class="text-muted">
+          Total obligaciones
+        </small>
+
+        <h4 class="mb-0">
+          $ {{ "%.2f"|format(resumen.total_obligaciones) }}
+        </h4>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-2">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <small class="text-muted">
+          Total aplicado
+        </small>
+
+        <h4 class="mb-0">
+          $ {{ "%.2f"|format(resumen.total_aplicado) }}
+        </h4>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-2">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <small class="text-muted">
+          Saldo pendiente
+        </small>
+
+        <h4 class="mb-0">
+          $ {{ "%.2f"|format(resumen.saldo_pendiente) }}
+        </h4>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-2">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <small class="text-muted">
+          Saldo vencido
+        </small>
+
+        <h4 class="mb-0">
+          $ {{ "%.2f"|format(resumen.saldo_vencido) }}
+        </h4>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-2">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <small class="text-muted">
+          Pagos sin aplicar
+        </small>
+
+        <h4 class="mb-0">
+          $ {{ "%.2f"|format(
+            resumen.saldo_pagos_sin_aplicar
+          ) }}
+        </h4>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <h5 class="card-title mb-1">
+          Estado por integrante
+        </h5>
+
+        <p class="text-muted mb-0">
+          El consolidado no modifica los estados de cuenta
+          individuales.
+        </p>
+      </div>
+    </div>
+
+    <div class="table-responsive">
+
+      <table class="table table-striped align-middle">
+
+        <thead class="table-dark">
+          <tr>
+            <th>Alumno</th>
+            <th>Total</th>
+            <th>Aplicado</th>
+            <th>Pendiente</th>
+            <th>Vencido</th>
+            <th>Días atraso</th>
+            <th>Pagos sin aplicar</th>
+            <th class="text-end">Detalle</th>
+          </tr>
+        </thead>
+
+        <tbody>
+
+          {% for fila in integrantes %}
+
+          <tr>
+            <td>
+              <strong>{{ fila.nombre }}</strong>
+            </td>
+
+            <td>
+              $ {{ "%.2f"|format(
+                fila.total_obligaciones
+              ) }}
+            </td>
+
+            <td>
+              $ {{ "%.2f"|format(
+                fila.total_aplicado
+              ) }}
+            </td>
+
+            <td>
+              $ {{ "%.2f"|format(
+                fila.saldo_pendiente
+              ) }}
+            </td>
+
+            <td>
+              $ {{ "%.2f"|format(
+                fila.saldo_vencido
+              ) }}
+            </td>
+
+            <td>
+              {% if fila.cantidad_obligaciones_vencidas %}
+                {{ fila.dias_atraso_max }}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+
+            <td>
+              $ {{ "%.2f"|format(
+                fila.saldo_pagos_sin_aplicar
+              ) }}
+            </td>
+
+            <td class="text-end">
+              <a
+                class="btn btn-outline-primary btn-sm"
+                href="{{ url_for(
+                  'finanzas.estado_cuenta_alumno',
+                  alumno_id=fila.alumno_id
+                ) }}"
+              >
+                <i class="bi bi-file-text"></i>
+                Estado individual
+              </a>
+            </td>
+          </tr>
+
+          {% else %}
+
+          <tr>
+            <td
+              colspan="8"
+              class="text-center text-muted"
+            >
+              No hay integrantes activos para mostrar.
+            </td>
+          </tr>
+
+          {% endfor %}
+
+        </tbody>
+
+      </table>
+
+    </div>
+
+  </div>
+</div>
+
+{% endblock %}

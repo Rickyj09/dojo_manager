@@ -57,7 +57,6 @@ from app.services.finanzas.asignaciones import (
     asignar_plan_financiero,
     resolver_contexto_descuento_asignacion,
     resolver_contexto_descuento_hermanos,
-    resolver_contexto_descuento_hermanos,
     resolver_tarifa_asignacion,
 )
 from app.services.finanzas.tarifas import calcular_tarifa
@@ -412,7 +411,6 @@ def configuracion_alumno(alumno_id):
     }
 
     tarifa = resultado = None
-    tarifa = resultado = None
     familia_descuento = None
     regla_descuento = None
     cantidad_familia = 1
@@ -685,6 +683,71 @@ def familia_detalle(grupo_familiar_id):
         puede_escribir=_puede_escribir_finanzas(),
         fecha_hoy=date.today().isoformat(),
     )
+
+@finanzas_bp.route(
+    "/familias/<int:grupo_familiar_id>/estado-cuenta"
+)
+@login_required
+def estado_cuenta_familia(grupo_familiar_id):
+    if not _puede_ver_finanzas():
+        abort(403)
+
+    academia_id = _academia_id_or_403()
+
+    familia = _validar_familia_visible(
+        academia_id,
+        grupo_familiar_id,
+    )
+
+    periodo = (
+        request.args.get("periodo") or ""
+    ).strip() or None
+
+    integrantes_query = (
+        db.session.query(Alumno.id)
+        .join(
+            AlumnoGrupoFamiliar,
+            AlumnoGrupoFamiliar.alumno_id == Alumno.id,
+        )
+        .filter(
+            AlumnoGrupoFamiliar.academia_id == academia_id,
+            AlumnoGrupoFamiliar.grupo_familiar_id == familia.id,
+            AlumnoGrupoFamiliar.activo.is_(True),
+            Alumno.academia_id == academia_id,
+            Alumno.activo.is_(True),
+        )
+    )
+
+    if current_user.has_role("PROFESOR"):
+        integrantes_query = integrantes_query.filter(
+            Alumno.sucursal_id == current_user.sucursal_id,
+        )
+
+    alumno_ids = {
+        row[0]
+        for row in integrantes_query.all()
+    }
+
+    resumen = obtener_resumen_cartera_academia(
+        academia_id=academia_id,
+        periodo=periodo,
+        alumno_ids=alumno_ids,
+    )
+
+    integrantes = obtener_cartera_alumnos(
+        academia_id=academia_id,
+        periodo=periodo,
+        alumno_ids=alumno_ids,
+    )
+
+    return render_template(
+        "finanzas/familia_estado_cuenta.html",
+        familia=familia,
+        resumen=resumen,
+        integrantes=integrantes,
+        periodo=periodo or "",
+    )
+
 
 @finanzas_bp.route(
     "/familias/<int:grupo_familiar_id>/integrantes",

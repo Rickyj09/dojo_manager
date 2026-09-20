@@ -10,18 +10,35 @@
     </p>
   </div>
 
-  <div class="d-flex gap-2">
-    <a class="btn btn-outline-secondary"
-       href="{{ url_for('finanzas.familias') }}">
+  <div class="d-flex flex-wrap gap-2">
+    <a
+      class="btn btn-outline-secondary"
+      href="{{ url_for('finanzas.familias') }}"
+    >
+      <i class="bi bi-arrow-left"></i>
       Familias
     </a>
 
+    <a
+      class="btn btn-outline-success"
+      href="{{ url_for(
+          'finanzas.estado_cuenta_familia',
+          grupo_familiar_id=familia.id
+      ) }}"
+    >
+      <i class="bi bi-wallet2"></i>
+      Estado financiero
+    </a>
+
     {% if puede_escribir %}
-    <a class="btn btn-outline-primary"
-       href="{{ url_for(
-           'finanzas.editar_familia',
-           grupo_familiar_id=familia.id
-       ) }}">
+    <a
+      class="btn btn-outline-primary"
+      href="{{ url_for(
+          'finanzas.editar_familia',
+          grupo_familiar_id=familia.id
+      ) }}"
+    >
+      <i class="bi bi-pencil"></i>
       Editar
     </a>
     {% endif %}
@@ -31,6 +48,7 @@
 <div class="card shadow-sm mb-4">
   <div class="card-body">
     <div class="row g-3">
+
       <div class="col-md-3">
         <div class="text-muted small">Código</div>
         <strong>{{ familia.codigo }}</strong>
@@ -43,7 +61,10 @@
 
       <div class="col-md-4">
         <div class="text-muted small">Estado</div>
-        <span class="badge {{ 'bg-success' if familia.activo else 'bg-secondary' }}">
+
+        <span
+          class="badge {{ 'bg-success' if familia.activo else 'bg-secondary' }}"
+        >
           {{ 'ACTIVA' if familia.activo else 'INACTIVA' }}
         </span>
       </div>
@@ -52,6 +73,7 @@
         <div class="text-muted small">Observaciones</div>
         <div>{{ familia.observaciones or "-" }}</div>
       </div>
+
     </div>
   </div>
 </div>
@@ -59,9 +81,13 @@
 {% if puede_escribir and familia.activo %}
 <div class="card shadow-sm mb-4">
   <div class="card-body">
-    <h5 class="card-title mb-3">Agregar integrante</h5>
+
+    <h5 class="card-title mb-3">
+      Agregar integrante
+    </h5>
 
     {% if alumnos_disponibles %}
+
     <form
       method="post"
       action="{{ url_for(
@@ -77,7 +103,10 @@
       >
 
       <div class="col-md-7">
-        <label class="form-label" for="alumno_id">
+        <label
+          class="form-label"
+          for="alumno_id"
+        >
           Alumno
         </label>
 
@@ -87,7 +116,9 @@
           name="alumno_id"
           required
         >
-          <option value="">Seleccione un alumno</option>
+          <option value="">
+            Seleccione un alumno
+          </option>
 
           {% for alumno in alumnos_disponibles %}
           <option value="{{ alumno.id }}">
@@ -103,7 +134,10 @@
       </div>
 
       <div class="col-md-3">
-        <label class="form-label" for="fecha_inicio">
+        <label
+          class="form-label"
+          for="fecha_inicio"
+        >
           Fecha de ingreso
         </label>
 
@@ -118,26 +152,40 @@
       </div>
 
       <div class="col-md-2">
-        <button class="btn btn-primary w-100" type="submit">
+        <button
+          class="btn btn-primary w-100"
+          type="submit"
+        >
           <i class="bi bi-person-plus"></i>
           Agregar
         </button>
       </div>
+
     </form>
+
     {% else %}
+
     <div class="alert alert-secondary mb-0">
       No hay alumnos disponibles para agregar a esta familia.
     </div>
+
     {% endif %}
+
   </div>
 </div>
 {% endif %}
 
 <div class="card shadow-sm mb-4">
   <div class="card-body">
-    <div class="d-flex justify-content-between align-items-center mb-3">
+
+    <div
+      class="d-flex justify-content-between align-items-center mb-3"
+    >
       <div>
-        <h5 class="card-title mb-1">Integrantes</h5>
+        <h5 class="card-title mb-1">
+          Integrantes
+        </h5>
+
         <p class="text-muted mb-0">
           Integrantes actuales e historial del grupo familiar.
         </p>
@@ -145,22 +193,30 @@
     </div>
 
     <div class="table-responsive">
+
       <table class="table table-striped align-middle">
+
         <thead class="table-dark">
           <tr>
             <th>Alumno</th>
             <th>Ingreso</th>
             <th>Retiro</th>
             <th>Estado</th>
+
             {% if puede_escribir %}
-            <th class="text-end">Acciones</th>
+            <th class="text-end">
+              Acciones
+            </th>
             {% endif %}
           </tr>
         </thead>
 
         <tbody>
+
         {% for membresia in membresias %}
+
           <tr>
+
             <td>
               <strong>
                 {{ membresia.alumno.apellidos }}
@@ -173,21 +229,35 @@
             </td>
 
             <td>
-              {{ membresia.fecha_fin.strftime('%d/%m/%Y')
-                 if membresia.fecha_fin else '-' }}
+              {{
+                membresia.fecha_fin.strftime('%d/%m/%Y')
+                if membresia.fecha_fin
+                else '-'
+              }}
             </td>
 
             <td>
               {% if membresia.activo %}
-              <span class="badge bg-success">ACTIVO</span>
+
+              <span class="badge bg-success">
+                ACTIVO
+              </span>
+
               {% else %}
-              <span class="badge bg-secondary">HISTÓRICO</span>
+
+              <span class="badge bg-secondary">
+                HISTÓRICO
+              </span>
+
               {% endif %}
             </td>
 
             {% if puede_escribir %}
+
             <td class="text-end">
+
               {% if membresia.activo %}
+
               <form
                 method="post"
                 class="d-inline-flex gap-2 align-items-center"
@@ -220,14 +290,23 @@
                   Retirar
                 </button>
               </form>
+
               {% else %}
-              <span class="text-muted">Sin acciones</span>
+
+              <span class="text-muted">
+                Sin acciones
+              </span>
+
               {% endif %}
+
             </td>
+
             {% endif %}
+
           </tr>
 
         {% else %}
+
           <tr>
             <td
               colspan="{{ 5 if puede_escribir else 4 }}"
@@ -236,26 +315,38 @@
               Esta familia todavía no tiene integrantes.
             </td>
           </tr>
+
         {% endfor %}
+
         </tbody>
+
       </table>
+
     </div>
   </div>
 </div>
 
 {% if puede_escribir %}
+
 <div class="card shadow-sm">
   <div class="card-body">
-    <h5 class="card-title">Estado de la familia</h5>
+
+    <h5 class="card-title">
+      Estado de la familia
+    </h5>
 
     {% if familia.activo %}
+
     <p class="text-muted">
       Para desactivar la familia no debe tener integrantes activos.
     </p>
+
     {% else %}
+
     <p class="text-muted">
       Puede volver a activar esta familia sin perder su historial.
     </p>
+
     {% endif %}
 
     <form
@@ -275,12 +366,17 @@
         class="btn btn-outline-secondary"
         type="submit"
       >
-        {{ 'Desactivar familia'
-           if familia.activo
-           else 'Activar familia' }}
+        {{
+          'Desactivar familia'
+          if familia.activo
+          else 'Activar familia'
+        }}
       </button>
     </form>
+
   </div>
 </div>
+
 {% endif %}
+
 {% endblock %}

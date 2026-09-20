@@ -16,6 +16,11 @@ from app.models.finanzas import (
 from app.models.pago import Pago
 from app.models.sucursal import Sucursal
 from app.services.finanzas.asignaciones import asignar_plan_financiero
+from app.services.finanzas.familias import (
+    asignar_alumno_a_familia,
+    crear_grupo_familiar,
+)
+
 from app.services.finanzas.cartera import (
     obtener_cartera_alumnos,
     obtener_estado_cuenta_alumno,
@@ -29,6 +34,7 @@ from app.services.finanzas.vencimientos import (
     CONDICION_VIGENTE,
     clasificar_antiguedad_cartera,
 )
+
 
 
 def login(client, user):
@@ -1092,3 +1098,277 @@ def test_post_aplicacion_no_permite_pago_de_otra_academia(app, db, base_data):
     )
     assert response.status_code == 404
     assert PagoAplicacion.query.count() == 0
+def crear_familia_cartera(
+    db,
+    base_data,
+    *alumno_keys,
+    codigo="FAM-CARTERA",
+):
+    academia_id = base_data["academia_a"].id
+
+    familia = crear_grupo_familiar(
+        academia_id=academia_id,
+        codigo=codigo,
+        nombre="Familia cartera",
+    )
+
+    for alumno_key in alumno_keys:
+        asignar_alumno_a_familia(
+            academia_id=academia_id,
+            alumno_id=base_data[alumno_key].id,
+            grupo_familiar_id=familia.id,
+            fecha_inicio=date(2026, 9, 1),
+        )
+
+    db.session.commit()
+
+    return familia
+
+
+def test_estado_financiero_familiar_consolida_integrantes(
+    app,
+    db,
+    base_data,
+):
+    familia = crear_familia_cartera(
+        db,
+        base_data,
+        "alumno_a1",
+        "alumno_a2",
+    )
+
+    obligacion_1 = crear_plan_y_obligacion(
+        db,
+        base_data,
+        alumno_key="alumno_a1",
+        valor="60.00",
+    )
+
+    crear_plan_y_obligacion(
+        db,
+        base_data,
+        alumno_key="alumno_a2",
+        valor="40.00",
+        codigo="DESARROLLO",
+    )
+
+    pago = registrar_pago(
+        academia_id=obligacion_1.academia_id,
+        alumno_id=obligacion_1.alumno_id,
+        fecha_pago=date(2026, 9, 5),
+        valor=Decimal("20.00"),
+        medio_pago="EFECTIVO",
+    )
+
+    aplicar_pago(
+        academia_id=obligacion_1.academia_id,
+        pago_id=pago.id,
+        obligacion_financiera_id=obligacion_1.id,
+        valor_aplicado=Decimal("20.00"),
+    )
+
+    db.session.commit()
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        f"/finanzas/familias/{familia.id}/estado-cuenta"
+    )
+
+    assert response.status_code == 200
+
+    texto = response.text
+
+    assert "Estado financiero familiar" in texto
+
+    assert (
+        base_data["alumno_a1"].apellidos
+        in texto
+    )
+
+    assert (
+        base_data["alumno_a2"].apellidos
+        in texto
+    )
+
+    assert "$ 100.00" in texto
+    assert "$ 20.00" in texto
+    assert "$ 80.00" in texto
+
+    assert "Estado individual" in texto
+
+    assert "Registrar pago familiar" not in texto
+
+
+def test_estado_financiero_familiar_excluye_alumno_ajeno(
+    app,
+    db,
+    base_data,
+):
+    familia = crear_familia_cartera(
+        db,
+        base_data,
+        "alumno_a1",
+    )
+
+    crear_plan_y_obligacion(
+        db,
+        base_data,
+        alumno_key="alumno_a1",
+        valor="60.00",
+    )
+
+    crear_plan_y_obligacion(
+        db,
+        base_data,
+        alumno_key="alumno_a2",
+        valor="40.00",
+        codigo="DESARROLLO",
+    )
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        f"/finanzas/familias/{familia.id}/estado-cuenta"
+    )
+    assert response.status_code == 200
+
+    nombre_integrante = (
+        f"{base_data['alumno_a1'].apellidos} "
+        f"{base_data['alumno_a1'].nombres}"
+    ).encode()
+
+    nombre_ajeno = (
+        f"{base_data['alumno_a2'].apellidos} "
+        f"{base_data['alumno_a2'].nombres}"
+    ).encode()
+
+    assert nombre_integrante in response.data
+    assert nombre_ajeno not in response.data
+
+    assert b"$ 60.00" in response.data
+
+def test_estado_financiero_familiar_respeta_tenant(
+    app,
+    db,
+    base_data,
+):
+    familia_b = crear_grupo_familiar(
+        academia_id=base_data["academia_b"].id,
+        codigo="FAM-B",
+        nombre="Familia B",
+    )
+
+    asignar_alumno_a_familia(
+        academia_id=base_data["academia_b"].id,
+        alumno_id=base_data["alumno_b1"].id,
+        grupo_familiar_id=familia_b.id,
+        fecha_inicio=date(2026, 9, 1),
+    )
+
+    db.session.commit()
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        f"/finanzas/familias/{familia_b.id}/estado-cuenta"
+    )
+
+    assert response.status_code == 404
+
+
+def test_profesor_estado_familiar_limita_a_sucursal(
+    app,
+    db,
+    base_data,
+):
+    sucursal_otro = Sucursal(
+        nombre="Sucursal familiar externa",
+        academia_id=base_data["academia_a"].id,
+        activo=True,
+    )
+
+    db.session.add(sucursal_otro)
+    db.session.flush()
+
+    base_data["alumno_a2"].sucursal_id = sucursal_otro.id
+
+    db.session.commit()
+
+    familia = crear_familia_cartera(
+        db,
+        base_data,
+        "alumno_a1",
+        "alumno_a2",
+    )
+
+    crear_plan_y_obligacion(
+        db,
+        base_data,
+        alumno_key="alumno_a1",
+        valor="60.00",
+    )
+
+    crear_plan_y_obligacion(
+        db,
+        base_data,
+        alumno_key="alumno_a2",
+        valor="40.00",
+        codigo="DESARROLLO",
+    )
+
+    client = app.test_client()
+    login(client, base_data["profesor_a"])
+
+    response = client.get(
+        f"/finanzas/familias/{familia.id}/estado-cuenta"
+    )
+
+    assert response.status_code == 200
+
+    nombre_integrante = (
+    f"{base_data['alumno_a1'].apellidos} "
+    f"{base_data['alumno_a1'].nombres}"
+).encode()
+
+    nombre_ajeno = (
+        f"{base_data['alumno_a2'].apellidos} "
+        f"{base_data['alumno_a2'].nombres}"
+    ).encode()
+
+    assert nombre_integrante in response.data
+    assert nombre_ajeno not in response.data
+
+    assert b"$ 60.00" in response.data
+
+
+def test_detalle_familia_enlaza_estado_financiero(
+    app,
+    db,
+    base_data,
+):
+    familia = crear_familia_cartera(
+        db,
+        base_data,
+        "alumno_a1",
+    )
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        f"/finanzas/familias/{familia.id}"
+    )
+
+    assert response.status_code == 200
+
+    enlace = (
+        f"/finanzas/familias/"
+        f"{familia.id}/estado-cuenta"
+    )
+
+    assert enlace in response.text
+    assert "Estado financiero" in response.text
