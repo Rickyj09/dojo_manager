@@ -53,7 +53,10 @@ from app.services.finanzas.obligaciones import (
     generar_obligaciones_mensuales, previsualizar_obligaciones_mensuales, parsear_periodo,
 )
 from app.services.finanzas.asignaciones import (
+    TIPOS_BENEFICIO_EXPLICITO,
     asignar_plan_financiero,
+    resolver_contexto_descuento_asignacion,
+    resolver_contexto_descuento_hermanos,
     resolver_contexto_descuento_hermanos,
     resolver_tarifa_asignacion,
 )
@@ -91,6 +94,36 @@ def _puede_configurar_finanzas():
 def _puede_escribir_finanzas():
     return _puede_configurar_finanzas()
 
+
+def _resolver_seleccion_beneficio(valor):
+    valor = (valor or "").strip()
+
+    if valor == "AUTO":
+        return True, None
+
+    if valor == "NINGUNO":
+        return False, None
+
+    if valor.startswith("REGLA:"):
+        try:
+            regla_descuento_id = int(
+                valor.split(":", 1)[1]
+            )
+        except (ValueError, IndexError):
+            raise FinanzasError(
+                "Seleccione un beneficio válido."
+            )
+
+        if regla_descuento_id <= 0:
+            raise FinanzasError(
+                "Seleccione un beneficio válido."
+            )
+
+        return True, regla_descuento_id
+
+    raise FinanzasError(
+        "Seleccione un beneficio válido."
+    )
 
 def _validar_alumno_visible(academia_id: int, alumno_id: int):
     alumno = Alumno.query.filter_by(id=alumno_id, academia_id=academia_id).first()
@@ -342,12 +375,43 @@ def configuracion_alumno(alumno_id):
     ).order_by(AlumnoPlanFinanciero.fecha_inicio.desc(), AlumnoPlanFinanciero.id.desc()).all()
     actual = next((item for item in historial if item.estado == "ACTIVO"), None)
     datos = request.form if request.method == "POST" else request.args
+
+    beneficio_default = "AUTO"
+
+    if (
+        actual is not None
+        and actual.regla_descuento is not None
+        and actual.regla_descuento.tipo
+        in TIPOS_BENEFICIO_EXPLICITO
+    ):
+        beneficio_default = (
+            f"REGLA:{actual.regla_descuento_id}"
+        )
+
     form = {
-        "plan_id": datos.get("plan_id", str(actual.plan_id) if actual else ""),
-        "frecuencia_id": datos.get("frecuencia_id", str(actual.frecuencia_id) if actual else ""),
-        "fecha_inicio": datos.get("fecha_inicio", date.today().isoformat()),
-        "asignacion_actual_id": datos.get("asignacion_actual_id", str(actual.id) if actual else "0"),
+        "plan_id": datos.get(
+            "plan_id",
+            str(actual.plan_id) if actual else "",
+        ),
+        "frecuencia_id": datos.get(
+            "frecuencia_id",
+            str(actual.frecuencia_id) if actual else "",
+        ),
+        "fecha_inicio": datos.get(
+            "fecha_inicio",
+            date.today().isoformat(),
+        ),
+        "asignacion_actual_id": datos.get(
+            "asignacion_actual_id",
+            str(actual.id) if actual else "0",
+        ),
+        "beneficio": datos.get(
+            "beneficio",
+            beneficio_default,
+        ),
     }
+
+    tarifa = resultado = None
     tarifa = resultado = None
     familia_descuento = None
     regla_descuento = None
@@ -367,11 +431,18 @@ def configuracion_alumno(alumno_id):
             tarifa = resolver_tarifa_asignacion(
                 academia_id=academia_id, plan_id=plan_id, frecuencia_id=frecuencia_id, fecha_inicio=fecha,
             )
+            aplicar_descuentos, regla_descuento_id = (
+                _resolver_seleccion_beneficio(
+                    form["beneficio"]
+                )
+            )
             familia_descuento, cantidad_familia, regla_descuento = (
-                resolver_contexto_descuento_hermanos(
+                resolver_contexto_descuento_asignacion(
                     academia_id=academia_id,
                     alumno_id=alumno.id,
                     fecha=fecha,
+                    regla_descuento_id=regla_descuento_id,
+                    aplicar_descuentos=aplicar_descuentos,
                 )
             )
 
@@ -391,7 +462,7 @@ def configuracion_alumno(alumno_id):
                     "cantidad_alumnos": cantidad_familia,
                     "fecha": fecha,
                 },
-                aplicar_descuentos=True,
+                aplicar_descuentos=aplicar_descuentos,
             )
 
             if (
@@ -415,7 +486,8 @@ def configuracion_alumno(alumno_id):
                     frecuencia_id=frecuencia_id,
                     fecha_inicio=fecha,
                     usuario_id=current_user.id,
-                    aplicar_descuentos=True,
+                    regla_descuento_id=regla_descuento_id,
+                    aplicar_descuentos=aplicar_descuentos,
                     asignacion_actual_id=esperada,
                 )
 
@@ -437,6 +509,22 @@ def configuracion_alumno(alumno_id):
             error = str(exc).removeprefix("Tarifa/configuracion no disponible. ") if isinstance(exc, FinanzasError) else "No se pudo guardar la configuración. Vuelva a abrir el formulario."
     planes = PlanFinanciero.query.filter_by(academia_id=academia_id, activo=True).order_by(PlanFinanciero.orden, PlanFinanciero.nombre).all()
     frecuencias = FrecuenciaEntrenamiento.query.filter_by(academia_id=academia_id, activo=True).order_by(FrecuenciaEntrenamiento.nombre).all()
+    beneficios = (
+        ReglaDescuento.query
+        .filter(
+            ReglaDescuento.academia_id == academia_id,
+            ReglaDescuento.activo.is_(True),
+            ReglaDescuento.tipo.in_(
+                TIPOS_BENEFICIO_EXPLICITO
+            ),
+        )
+        .order_by(
+            ReglaDescuento.tipo,
+            ReglaDescuento.nombre,
+            ReglaDescuento.id,
+        )
+        .all()
+    )
     return render_template(
     "finanzas/asignacion_form.html",
     alumno=alumno,
@@ -453,6 +541,7 @@ def configuracion_alumno(alumno_id):
     error=error,
     puede_escribir_finanzas=_puede_escribir_finanzas(),
     ver_finanzas=True,
+    beneficios=beneficios,
 )
 
 

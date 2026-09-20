@@ -457,3 +457,260 @@ def test_ui_un_integrante_no_recibe_descuento_hermanos(
     assert asignacion.regla_descuento_id is None
     assert asignacion.descuento_valor_snapshot == Decimal("0.00")
     assert asignacion.valor_final_snapshot == Decimal("50.00")
+
+def test_ui_lista_solo_beneficios_explicitos_activos(
+    app,
+    db,
+    base_data,
+    catalogo,
+):
+    academia_id = base_data["academia_a"].id
+
+    beca = ReglaDescuento(
+        academia_id=academia_id,
+        codigo="BECA_UI",
+        nombre="Beca UI",
+        tipo="BECA",
+        porcentaje=Decimal("50.00"),
+        activo=True,
+    )
+
+    inactiva = ReglaDescuento(
+        academia_id=academia_id,
+        codigo="CONVENIO_OFF",
+        nombre="Convenio inactivo",
+        tipo="CONVENIO",
+        porcentaje=Decimal("20.00"),
+        activo=False,
+    )
+
+    hermanos = ReglaDescuento(
+        academia_id=academia_id,
+        codigo="HERMANOS_UI",
+        nombre="Hermanos UI",
+        tipo="HERMANOS",
+        porcentaje=Decimal("10.00"),
+        cantidad_minima=2,
+        activo=True,
+    )
+
+    db.session.add_all([beca, inactiva, hermanos])
+    db.session.commit()
+
+    client = cliente(app, base_data["admin_a"])
+
+    texto = client.get(url(base_data)).text
+
+    assert 'value="AUTO"' in texto
+    assert 'value="NINGUNO"' in texto
+    assert f'value="REGLA:{beca.id}"' in texto
+    assert f'value="REGLA:{inactiva.id}"' not in texto
+    assert f'value="REGLA:{hermanos.id}"' not in texto
+
+
+def test_ui_beca_explicita_reemplaza_hermanos_preview_y_guardado(
+    app,
+    db,
+    base_data,
+    catalogo,
+):
+    academia_id = base_data["academia_a"].id
+
+    familia = crear_grupo_familiar(
+        academia_id=academia_id,
+        codigo="FAM-D6",
+        nombre="Familia D6",
+    )
+
+    for alumno in (
+        base_data["alumno_a1"],
+        base_data["alumno_a2"],
+    ):
+        asignar_alumno_a_familia(
+            academia_id=academia_id,
+            alumno_id=alumno.id,
+            grupo_familiar_id=familia.id,
+            fecha_inicio=date.today(),
+        )
+
+    hermanos = ReglaDescuento(
+        academia_id=academia_id,
+        codigo="HERMANOS_2",
+        nombre="Hermanos 2",
+        tipo="HERMANOS",
+        porcentaje=Decimal("10.00"),
+        cantidad_minima=2,
+        activo=True,
+    )
+
+    beca = ReglaDescuento(
+        academia_id=academia_id,
+        codigo="BECA_50",
+        nombre="Beca 50",
+        tipo="BECA",
+        porcentaje=Decimal("50.00"),
+        activo=True,
+    )
+
+    db.session.add_all([hermanos, beca])
+    db.session.commit()
+
+    client = cliente(app, base_data["admin_a"])
+
+    formulario = datos(
+        catalogo,
+        beneficio=f"REGLA:{beca.id}",
+    )
+
+    consulta = client.post(
+        url(base_data),
+        data={**formulario, "accion": "consultar"},
+    )
+
+    texto = " ".join(consulta.text.split())
+
+    assert consulta.status_code == 200
+    assert "Beca 50" in texto
+    assert "BECA" in texto
+    assert "USD 25.00" in texto
+    assert AlumnoPlanFinanciero.query.count() == 0
+
+    response = client.post(
+        url(base_data),
+        data=formulario,
+    )
+
+    assert response.status_code == 302
+
+    asignacion = AlumnoPlanFinanciero.query.one()
+
+    assert asignacion.grupo_familiar_id == familia.id
+    assert asignacion.regla_descuento_id == beca.id
+    assert asignacion.regla_descuento_id != hermanos.id
+    assert asignacion.descuento_valor_snapshot == Decimal("25.00")
+    assert asignacion.valor_final_snapshot == Decimal("25.00")
+
+
+def test_ui_sin_descuento_ignora_hermanos(
+    app,
+    db,
+    base_data,
+    catalogo,
+):
+    academia_id = base_data["academia_a"].id
+
+    familia = crear_grupo_familiar(
+        academia_id=academia_id,
+        codigo="FAM-D6-SIN",
+        nombre="Familia D6 sin descuento",
+    )
+
+    for alumno in (
+        base_data["alumno_a1"],
+        base_data["alumno_a2"],
+    ):
+        asignar_alumno_a_familia(
+            academia_id=academia_id,
+            alumno_id=alumno.id,
+            grupo_familiar_id=familia.id,
+            fecha_inicio=date.today(),
+        )
+
+    db.session.add(
+        ReglaDescuento(
+            academia_id=academia_id,
+            codigo="HERMANOS_2",
+            nombre="Hermanos 2",
+            tipo="HERMANOS",
+            porcentaje=Decimal("10.00"),
+            cantidad_minima=2,
+            activo=True,
+        )
+    )
+    db.session.commit()
+
+    client = cliente(app, base_data["admin_a"])
+
+    response = client.post(
+        url(base_data),
+        data=datos(
+            catalogo,
+            beneficio="NINGUNO",
+        ),
+    )
+
+    assert response.status_code == 302
+
+    asignacion = AlumnoPlanFinanciero.query.one()
+
+    assert asignacion.grupo_familiar_id is None
+    assert asignacion.regla_descuento_id is None
+    assert asignacion.descuento_valor_snapshot == Decimal("0.00")
+    assert asignacion.valor_final_snapshot == Decimal("50.00")
+
+
+def test_ui_rechaza_beneficio_de_otra_academia(
+    app,
+    db,
+    base_data,
+    catalogo,
+):
+    regla = ReglaDescuento(
+        academia_id=base_data["academia_b"].id,
+        codigo="BECA_AJENA_UI",
+        nombre="Beca ajena",
+        tipo="BECA",
+        porcentaje=Decimal("50.00"),
+        activo=True,
+    )
+
+    db.session.add(regla)
+    db.session.commit()
+
+    client = cliente(app, base_data["admin_a"])
+
+    response = client.post(
+        url(base_data),
+        data=datos(
+            catalogo,
+            beneficio=f"REGLA:{regla.id}",
+        ),
+    )
+
+    assert response.status_code == 200
+    assert "alert-danger" in response.text
+    assert AlumnoPlanFinanciero.query.count() == 0
+
+
+def test_ui_no_permite_seleccionar_hermanos_manualmente(
+    app,
+    db,
+    base_data,
+    catalogo,
+):
+    regla = ReglaDescuento(
+        academia_id=base_data["academia_a"].id,
+        codigo="HERMANOS_MANUAL",
+        nombre="Hermanos manual",
+        tipo="HERMANOS",
+        porcentaje=Decimal("10.00"),
+        cantidad_minima=2,
+        activo=True,
+    )
+
+    db.session.add(regla)
+    db.session.commit()
+
+    client = cliente(app, base_data["admin_a"])
+
+    response = client.post(
+        url(base_data),
+        data=datos(
+            catalogo,
+            beneficio=f"REGLA:{regla.id}",
+        ),
+    )
+
+    assert response.status_code == 200
+    assert "alert-danger" in response.text
+    assert AlumnoPlanFinanciero.query.count() == 0

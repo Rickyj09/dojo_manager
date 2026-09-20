@@ -1,144 +1,504 @@
 {% extends "base_admin.html" %}
+
 {% block title %}Configuración financiera del alumno{% endblock %}
+
 {% block content %}
+
 <div class="d-flex flex-wrap justify-content-between gap-2 mb-4">
-  <div><h3>{{ alumno.nombres }} {{ alumno.apellidos }}</h3><p class="text-muted">Configuración financiera del alumno</p></div>
-  <div><a class="btn btn-outline-secondary" href="{{ url_for('alumnos.perfil', id=alumno.id) }}">Ficha del alumno</a> <a class="btn btn-outline-secondary" href="{{ url_for('finanzas.asignaciones') }}">Asignaciones</a></div>
-</div>
-{% include "finanzas/_configuracion_alumno.html" %}
-{% if puede_escribir_finanzas %}
-<div class="card shadow-sm mb-4"><div class="card-body">
-  <h4>{{ 'Cambiar configuración' if asignacion_financiera else 'Asignar plan financiero' }}</h4>
-  <p class="text-muted">El tarifario vigente se selecciona según la fecha de inicio. Consulte la tarifa antes de guardar.</p>
-  {% if asignacion_financiera %}<p>La nueva fecha debe ser posterior al {{ asignacion_financiera.fecha_inicio.strftime('%d/%m/%Y') }}. La asignación anterior terminará el día previo; los importes históricos se conservarán.</p>{% endif %}
-  {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
-  {% if not planes or not frecuencias %}<div class="alert alert-warning">Necesita planes y frecuencias activos para asignar una configuración financiera.</div>{% endif %}
-  <form method="post" class="row g-3">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="asignacion_actual_id" value="{{ form.asignacion_actual_id }}">
-    <div class="col-md-6"><label for="plan_id" class="form-label">Plan financiero</label><select class="form-select" name="plan_id" id="plan_id" required><option value="">Seleccione un plan</option>{% for plan in planes %}<option value="{{ plan.id }}" {% if form.plan_id|string == plan.id|string %}selected{% endif %}>{{ plan.nombre }}</option>{% endfor %}</select></div>
-    <div class="col-md-6"><label for="frecuencia_id" class="form-label">Frecuencia</label><select class="form-select" name="frecuencia_id" id="frecuencia_id" required><option value="">Seleccione una frecuencia</option>{% for frecuencia in frecuencias %}<option value="{{ frecuencia.id }}" {% if form.frecuencia_id|string == frecuencia.id|string %}selected{% endif %}>{{ frecuencia.nombre }}</option>{% endfor %}</select></div>
-    <div class="col-md-6"><label for="fecha_inicio" class="form-label">Fecha de inicio</label><input class="form-control" type="date" id="fecha_inicio" name="fecha_inicio" value="{{ form.fecha_inicio }}" required></div>
-    <div class="col-md-6"><label for="importe" class="form-label">Tarifa encontrada (solo lectura)</label><input class="form-control" id="importe" readonly value="{% if resultado %}{{ tarifa.tarifario.moneda }} {{ '%.2f'|format(resultado.tarifa_base) }}{% endif %}" placeholder="Consulte la tarifa"><p class="small text-muted mt-1" id="tarifario-resuelto">{% if resultado %}Tarifario: {{ tarifa.tarifario.nombre }}{% endif %}</p></div>
-    {% if resultado %}
-<div class="col-12" id="resumen-descuento">
-  <div class="card bg-light border">
-    <div class="card-body">
-      <h5 class="card-title mb-3">
-        Resultado financiero
-      </h5>
+  <div>
+    <h3>{{ alumno.nombres }} {{ alumno.apellidos }}</h3>
+    <p class="text-muted">Configuración financiera del alumno</p>
+  </div>
 
-      <div class="row g-3">
-        <div class="col-md-4">
-          <div class="text-muted small">Tarifa base</div>
-          <strong>
-            {{ tarifa.tarifario.moneda }}
-            {{ '%.2f'|format(resultado.tarifa_base) }}
-          </strong>
-        </div>
+  <div>
+    <a
+      class="btn btn-outline-secondary"
+      href="{{ url_for('alumnos.perfil', id=alumno.id) }}"
+    >
+      Ficha del alumno
+    </a>
 
-        <div class="col-md-4">
-          <div class="text-muted small">Familia</div>
-
-          {% if familia_descuento %}
-          <strong>{{ familia_descuento.nombre }}</strong>
-          {% else %}
-          <span>Sin familia activa</span>
-          {% endif %}
-        </div>
-
-        <div class="col-md-4">
-          <div class="text-muted small">
-            Integrantes para la fecha
-          </div>
-
-          {% if familia_descuento %}
-          <strong>{{ cantidad_familia }}</strong>
-          {% else %}
-          <span>—</span>
-          {% endif %}
-        </div>
-
-        <div class="col-md-6">
-          <div class="text-muted small">
-            Descuento automático
-          </div>
-
-          {% if regla_descuento %}
-            <strong>{{ regla_descuento.codigo }}</strong>
-
-            {% if regla_descuento.porcentaje is not none %}
-              — {{ regla_descuento.porcentaje }}%
-            {% else %}
-              —
-              {{ tarifa.tarifario.moneda }}
-              {{ '%.2f'|format(regla_descuento.valor_fijo) }}
-            {% endif %}
-          {% else %}
-            <span>Sin descuento automático</span>
-          {% endif %}
-        </div>
-
-        <div class="col-md-3">
-          <div class="text-muted small">Descuento</div>
-          <strong>
-            {{ tarifa.tarifario.moneda }}
-            {{ '%.2f'|format(
-                resultado.tarifa_base - resultado.valor_final
-            ) }}
-          </strong>
-        </div>
-
-        <div class="col-md-3">
-          <div class="text-muted small">
-            Valor resultante
-          </div>
-          <strong class="fs-5">
-            {{ tarifa.tarifario.moneda }}
-            {{ '%.2f'|format(resultado.valor_final) }}
-          </strong>
-        </div>
-      </div>
-
-      {% if regla_descuento %}
-      <div class="alert alert-info mt-3 mb-0">
-        El descuento por hermanos se calculó según la
-        composición familiar existente en la fecha de inicio.
-        Los valores históricos no se recalculan.
-      </div>
-      {% endif %}
-    </div>
+    <a
+      class="btn btn-outline-secondary"
+      href="{{ url_for('finanzas.asignaciones') }}"
+    >
+      Asignaciones
+    </a>
   </div>
 </div>
-{% endif %}
-    <div class="col-12 d-flex flex-wrap gap-2">
-      <button class="btn btn-outline-primary" type="submit" name="accion" value="consultar">Consultar tarifa</button>
-      <button class="btn btn-primary" id="guardar-asignacion" type="submit" {% if not resultado or error %}disabled{% endif %}>Guardar asignación</button>
+
+{% include "finanzas/_configuracion_alumno.html" %}
+
+{% if puede_escribir_finanzas %}
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+
+    <h4>
+      {{ 'Cambiar configuración' if asignacion_financiera else 'Asignar plan financiero' }}
+    </h4>
+
+    <p class="text-muted">
+      El tarifario vigente se selecciona según la fecha de inicio.
+      Consulte la tarifa antes de guardar.
+    </p>
+
+    {% if asignacion_financiera %}
+    <p>
+      La nueva fecha debe ser posterior al
+      {{ asignacion_financiera.fecha_inicio.strftime('%d/%m/%Y') }}.
+      La asignación anterior terminará el día previo;
+      los importes históricos se conservarán.
+    </p>
+    {% endif %}
+
+    {% if error %}
+    <div class="alert alert-danger" role="alert">
+      {{ error }}
     </div>
-  </form>
-</div></div>
+    {% endif %}
+
+    {% if not planes or not frecuencias %}
+    <div class="alert alert-warning">
+      Necesita planes y frecuencias activos para asignar una
+      configuración financiera.
+    </div>
+    {% endif %}
+
+    <form method="post" class="row g-3">
+
+      <input
+        type="hidden"
+        name="csrf_token"
+        value="{{ csrf_token() }}"
+      >
+
+      <input
+        type="hidden"
+        name="asignacion_actual_id"
+        value="{{ form.asignacion_actual_id }}"
+      >
+
+      <div class="col-md-6">
+        <label for="plan_id" class="form-label">
+          Plan financiero
+        </label>
+
+        <select
+          class="form-select"
+          name="plan_id"
+          id="plan_id"
+          required
+        >
+          <option value="">Seleccione un plan</option>
+
+          {% for plan in planes %}
+          <option
+            value="{{ plan.id }}"
+            {% if form.plan_id|string == plan.id|string %}selected{% endif %}
+          >
+            {{ plan.nombre }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-6">
+        <label for="frecuencia_id" class="form-label">
+          Frecuencia
+        </label>
+
+        <select
+          class="form-select"
+          name="frecuencia_id"
+          id="frecuencia_id"
+          required
+        >
+          <option value="">Seleccione una frecuencia</option>
+
+          {% for frecuencia in frecuencias %}
+          <option
+            value="{{ frecuencia.id }}"
+            {% if form.frecuencia_id|string == frecuencia.id|string %}selected{% endif %}
+          >
+            {{ frecuencia.nombre }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-6">
+        <label for="fecha_inicio" class="form-label">
+          Fecha de inicio
+        </label>
+
+        <input
+          class="form-control"
+          type="date"
+          id="fecha_inicio"
+          name="fecha_inicio"
+          value="{{ form.fecha_inicio }}"
+          required
+        >
+      </div>
+
+      <div class="col-md-6">
+        <label for="beneficio" class="form-label">
+          Beneficio / descuento
+        </label>
+
+        <select
+          class="form-select"
+          name="beneficio"
+          id="beneficio"
+          required
+        >
+          <option
+            value="AUTO"
+            {% if form.beneficio == 'AUTO' %}selected{% endif %}
+          >
+            Automático según familia
+          </option>
+
+          <option
+            value="NINGUNO"
+            {% if form.beneficio == 'NINGUNO' %}selected{% endif %}
+          >
+            Sin descuento
+          </option>
+
+          {% for beneficio in beneficios %}
+          <option
+            value="REGLA:{{ beneficio.id }}"
+            {% if form.beneficio == 'REGLA:' ~ beneficio.id|string %}selected{% endif %}
+          >
+            {{ beneficio.tipo }} — {{ beneficio.nombre }}
+            {% if beneficio.porcentaje is not none %}
+              ({{ beneficio.porcentaje }}%)
+            {% else %}
+              (valor fijo {{ '%.2f'|format(beneficio.valor_fijo) }})
+            {% endif %}
+            {% if beneficio.requiere_autorizacion %}
+              — requiere autorización
+            {% endif %}
+          </option>
+          {% endfor %}
+        </select>
+
+        <div class="form-text">
+          Un beneficio explícito reemplaza el descuento automático
+          por hermanos. Los descuentos no son acumulables.
+        </div>
+      </div>
+
+      <div class="col-md-6">
+        <label for="importe" class="form-label">
+          Tarifa encontrada (solo lectura)
+        </label>
+
+        <input class="form-control" id="importe" readonly value="{% if resultado %}{{ tarifa.tarifario.moneda }} {{ '%.2f'|format(resultado.tarifa_base) }}{% endif %}" placeholder="Consulte la tarifa">
+
+        <p
+          class="small text-muted mt-1"
+          id="tarifario-resuelto"
+        >
+          {% if resultado %}
+            Tarifario: {{ tarifa.tarifario.nombre }}
+          {% endif %}
+        </p>
+      </div>
+
+      {% if resultado %}
+
+      <div class="col-12" id="resumen-descuento">
+        <div class="card bg-light border">
+          <div class="card-body">
+
+            <h5 class="card-title mb-3">
+              Resultado financiero
+            </h5>
+
+            <div class="row g-3">
+
+              <div class="col-md-4">
+                <div class="text-muted small">
+                  Tarifa base
+                </div>
+
+                <strong>
+                  {{ tarifa.tarifario.moneda }}
+                  {{ '%.2f'|format(resultado.tarifa_base) }}
+                </strong>
+              </div>
+
+              <div class="col-md-4">
+                <div class="text-muted small">
+                  Familia
+                </div>
+
+                {% if familia_descuento %}
+                  <strong>{{ familia_descuento.nombre }}</strong>
+                {% else %}
+                  <span>Sin familia activa</span>
+                {% endif %}
+              </div>
+
+              <div class="col-md-4">
+                <div class="text-muted small">
+                  Integrantes para la fecha
+                </div>
+
+                {% if familia_descuento %}
+                  <strong>{{ cantidad_familia }}</strong>
+                {% else %}
+                  <span>—</span>
+                {% endif %}
+              </div>
+
+              <div class="col-md-6">
+                <div class="text-muted small">
+                  Beneficio aplicado
+                </div>
+
+                {% if regla_descuento %}
+
+                  <strong>{{ regla_descuento.codigo }}</strong>
+
+                  {% if regla_descuento.nombre != regla_descuento.codigo %}
+                    — {{ regla_descuento.nombre }}
+                  {% endif %}
+
+                  <span class="badge text-bg-secondary">
+                    {{ regla_descuento.tipo }}
+                  </span>
+
+                  {% if regla_descuento.porcentaje is not none %}
+                    — {{ regla_descuento.porcentaje }}%
+                  {% else %}
+                    —
+                    {{ tarifa.tarifario.moneda }}
+                    {{ '%.2f'|format(regla_descuento.valor_fijo) }}
+                  {% endif %}
+
+                {% elif form.beneficio == 'NINGUNO' %}
+
+                  <span>Sin descuento seleccionado</span>
+
+                {% else %}
+
+                  <span>Sin descuento aplicable</span>
+
+                {% endif %}
+              </div>
+
+              <div class="col-md-3">
+                <div class="text-muted small">
+                  Descuento
+                </div>
+
+                <strong>
+                  {{ tarifa.tarifario.moneda }}
+                  {{
+                    '%.2f'|format(
+                      resultado.tarifa_base - resultado.valor_final
+                    )
+                  }}
+                </strong>
+              </div>
+
+              <div class="col-md-3">
+                <div class="text-muted small">
+                  Valor resultante
+                </div>
+
+                <strong class="fs-5">
+                  {{ tarifa.tarifario.moneda }}
+                  {{ '%.2f'|format(resultado.valor_final) }}
+                </strong>
+              </div>
+
+            </div>
+
+            {% if regla_descuento %}
+
+              {% if regla_descuento.tipo == 'HERMANOS' %}
+
+              <div class="alert alert-info mt-3 mb-0">
+                El descuento por hermanos se calculó según la
+                composición familiar existente en la fecha de inicio.
+                Los valores históricos no se recalculan.
+              </div>
+
+              {% else %}
+
+              <div class="alert alert-info mt-3 mb-0">
+                El beneficio seleccionado reemplaza el descuento
+                automático por hermanos. Los descuentos no son
+                acumulables. Los valores históricos no se recalculan.
+              </div>
+
+              {% endif %}
+
+            {% elif form.beneficio == 'NINGUNO' %}
+
+            <div class="alert alert-secondary mt-3 mb-0">
+              Esta configuración se guardará sin descuentos.
+            </div>
+
+            {% endif %}
+
+          </div>
+        </div>
+      </div>
+
+      {% endif %}
+
+      <div class="col-12 d-flex flex-wrap gap-2">
+
+        <button
+          class="btn btn-outline-primary"
+          type="submit"
+          name="accion"
+          value="consultar"
+        >
+          Consultar tarifa
+        </button>
+
+        <button
+          class="btn btn-primary"
+          id="guardar-asignacion"
+          type="submit"
+          {% if not resultado or error %}disabled{% endif %}
+        >
+          Guardar asignación
+        </button>
+
+      </div>
+
+    </form>
+
+  </div>
+</div>
+
 <script>
   // Una modificación de las opciones requiere consultar nuevamente el precio.
-  for (const id of ['plan_id', 'frecuencia_id', 'fecha_inicio']) {
-  document.getElementById(id).addEventListener('change', () => {
-    document.getElementById('guardar-asignacion').disabled = true;
-    document.getElementById('importe').value = '';
-    document.getElementById('tarifario-resuelto').textContent =
-      'Consulte la tarifa para esta selección.';
+  for (const id of [
+    'plan_id',
+    'frecuencia_id',
+    'fecha_inicio',
+    'beneficio'
+  ]) {
+    document.getElementById(id).addEventListener('change', () => {
+      document.getElementById('guardar-asignacion').disabled = true;
+      document.getElementById('importe').value = '';
 
-    const resumen = document.getElementById('resumen-descuento');
-    if (resumen) {
-      resumen.style.display = 'none';
-    }
-  });
-}
+      document.getElementById('tarifario-resuelto').textContent =
+        'Consulte la tarifa para esta selección.';
+
+      const resumen =
+        document.getElementById('resumen-descuento');
+
+      if (resumen) {
+        resumen.style.display = 'none';
+      }
+    });
+  }
 </script>
+
 {% endif %}
+
 {% if historial %}
+
 <h4>Historial de configuraciones</h4>
-<div class="table-responsive"><table class="table table-striped align-middle">
-  <thead><tr><th>Plan</th><th>Frecuencia</th><th>Tarifario</th><th>Importe base</th><th>Inicio</th><th>Fin</th><th>Estado</th></tr></thead>
-  <tbody>{% for item in historial %}<tr><td>{{ item.plan.nombre }}</td><td>{{ item.frecuencia.nombre }}</td><td>{{ item.tarifario.nombre }}</td><td>{{ item.moneda_snapshot }} {{ '%.2f'|format(item.tarifa_base_snapshot) }}</td><td>{{ item.fecha_inicio.strftime('%d/%m/%Y') }}</td><td>{{ item.fecha_fin.strftime('%d/%m/%Y') if item.fecha_fin else '—' }}</td><td>{{ item.estado }}</td></tr>{% endfor %}</tbody>
-</table></div>
+
+<div class="table-responsive">
+  <table class="table table-striped align-middle">
+
+    <thead>
+      <tr>
+        <th>Plan</th>
+        <th>Frecuencia</th>
+        <th>Tarifario</th>
+        <th>Beneficio aplicado</th>
+        <th>Importe base</th>
+        <th>Descuento</th>
+        <th>Valor final</th>
+        <th>Inicio</th>
+        <th>Fin</th>
+        <th>Estado</th>
+      </tr>
+    </thead>
+
+    <tbody>
+
+      {% for item in historial %}
+
+      <tr>
+
+        <td>{{ item.plan.nombre }}</td>
+
+        <td>{{ item.frecuencia.nombre }}</td>
+
+        <td>{{ item.tarifario.nombre }}</td>
+
+        <td>
+          {% if item.regla_descuento %}
+
+            {{ item.regla_descuento.codigo }}
+
+            <span class="badge text-bg-secondary">
+              {{ item.regla_descuento.tipo }}
+            </span>
+
+          {% else %}
+
+            —
+
+          {% endif %}
+        </td>
+
+        <td>
+          {{ item.moneda_snapshot }}
+          {{ '%.2f'|format(item.tarifa_base_snapshot) }}
+        </td>
+
+        <td>
+          {{ item.moneda_snapshot }}
+          {{ '%.2f'|format(item.descuento_valor_snapshot) }}
+        </td>
+
+        <td>
+          <strong>
+            {{ item.moneda_snapshot }}
+            {{ '%.2f'|format(item.valor_final_snapshot) }}
+          </strong>
+        </td>
+
+        <td>
+          {{ item.fecha_inicio.strftime('%d/%m/%Y') }}
+        </td>
+
+        <td>
+          {{
+            item.fecha_fin.strftime('%d/%m/%Y')
+            if item.fecha_fin
+            else '—'
+          }}
+        </td>
+
+        <td>
+          {{ item.estado }}
+        </td>
+
+      </tr>
+
+      {% endfor %}
+
+    </tbody>
+
+  </table>
+</div>
+
 {% endif %}
+
 {% endblock %}
