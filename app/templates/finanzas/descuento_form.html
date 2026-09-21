@@ -56,11 +56,24 @@
       </div>
 
       <div class="col-md-3">
-        <label class="form-label">Tipo</label>
-        <select class="form-select" name="tipo" required>
+        <label
+          class="form-label"
+          for="tipo_descuento"
+        >
+          Tipo
+        </label>
+
+        <select
+          class="form-select"
+          name="tipo"
+          id="tipo_descuento"
+          required
+        >
           {% for item in tipos %}
-          <option value="{{ item }}"
-                  {% if form.tipo == item %}selected{% endif %}>
+          <option
+            value="{{ item }}"
+            {% if form.tipo == item %}selected{% endif %}
+          >
             {{ item }}
           </option>
           {% endfor %}
@@ -72,13 +85,16 @@
           Porcentaje
         </label>
         <div class="input-group">
-          <input class="form-control"
-                 name="porcentaje"
-                 type="number"
-                 min="0"
-                 max="100"
-                 step="0.01"
-                 value="{{ form.porcentaje }}">
+          <input
+  class="form-control"
+  name="porcentaje"
+  id="porcentaje_descuento"
+  type="number"
+  min="0"
+  max="100"
+  step="0.01"
+  value="{{ form.porcentaje }}"
+>
           <span class="input-group-text">%</span>
         </div>
       </div>
@@ -89,26 +105,43 @@
         </label>
         <div class="input-group">
           <span class="input-group-text">$</span>
-          <input class="form-control"
-                 name="valor_fijo"
-                 type="number"
-                 min="0"
-                 step="0.01"
-                 value="{{ form.valor_fijo }}">
+          <input
+  class="form-control"
+  name="valor_fijo"
+  id="valor_fijo_descuento"
+  type="number"
+  min="0"
+  step="0.01"
+  value="{{ form.valor_fijo }}"
+>
         </div>
       </div>
 
-      <div class="col-md-3">
-        <label class="form-label">
+      <div
+        class="col-md-3{% if form.tipo != 'HERMANOS' %} d-none{% endif %}"
+        id="grupo_cantidad_minima"
+      >
+        <label
+          class="form-label"
+          for="cantidad_minima"
+        >
           Cantidad mínima
         </label>
-        <input class="form-control"
-               name="cantidad_minima"
-               type="number"
-               min="0"
-               value="{{ form.cantidad_minima }}">
+
+        <input
+          class="form-control"
+          name="cantidad_minima"
+          id="cantidad_minima"
+          type="number"
+          min="2"
+          step="1"
+          value="{{ form.cantidad_minima }}"
+          {% if form.tipo == 'HERMANOS' %}required{% else %}disabled{% endif %}
+        >
+
         <div class="form-text">
-          Obligatoria para HERMANOS. Mínimo 2.
+          Número mínimo de alumnos de la familia para aplicar esta regla.
+          Mínimo 2.
         </div>
       </div>
 
@@ -176,4 +209,8 @@
     </form>
   </div>
 </div>
+<script
+  src="{{ url_for('static', filename='js/descuento_form.js') }}"
+  defer
+></script>
 {% endblock %}

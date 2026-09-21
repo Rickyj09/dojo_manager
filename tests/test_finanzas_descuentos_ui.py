@@ -606,3 +606,73 @@ def test_csrf_protege_mutaciones(
 
     assert listado.status_code == 200
     assert b'name="csrf_token"' in listado.data
+def test_formulario_hermanos_muestra_cantidad_minima(
+    app,
+    db,
+    base_data,
+):
+    regla = crear_regla(
+        db,
+        base_data["academia_a"].id,
+        codigo="HERMANOS-UI",
+        nombre="Hermanos UI",
+        tipo="HERMANOS",
+        cantidad_minima="2",
+    )
+
+    client = cliente(app, base_data["admin_a"])
+
+    response = client.get(
+        f"/finanzas/descuentos/{regla.id}/editar"
+    )
+
+    assert response.status_code == 200
+
+    texto = response.get_data(as_text=True)
+
+    assert 'id="tipo_descuento"' in texto
+    assert 'value="HERMANOS"' in texto
+    assert 'id="grupo_cantidad_minima"' in texto
+    assert 'id="cantidad_minima"' in texto
+    assert 'min="2"' in texto
+    assert "d-none" not in texto.split(
+        'id="grupo_cantidad_minima"'
+    )[0].split("<div")[-1]
+    assert "js/descuento_form.js" in texto
+
+
+def test_formulario_beca_oculta_cantidad_minima(
+    app,
+    db,
+    base_data,
+):
+    regla = crear_regla(
+        db,
+        base_data["academia_a"].id,
+        codigo="BECA-UI",
+        nombre="Beca UI",
+        tipo="BECA",
+        porcentaje="50.00",
+        cantidad_minima="",
+    )
+
+    client = cliente(app, base_data["admin_a"])
+
+    response = client.get(
+        f"/finanzas/descuentos/{regla.id}/editar"
+    )
+
+    assert response.status_code == 200
+
+    texto = response.get_data(as_text=True)
+
+    assert 'id="tipo_descuento"' in texto
+    assert 'value="BECA"' in texto
+    assert (
+        'class="col-md-3 d-none"\n'
+        '        id="grupo_cantidad_minima"'
+        in texto
+    )
+    assert 'id="cantidad_minima"' in texto
+    assert "disabled" in texto
+    assert "js/descuento_form.js" in texto
