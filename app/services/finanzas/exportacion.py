@@ -63,7 +63,7 @@ def generar_excel_pagos(*, pagos):
         "Moneda",
         "Valor",
         "Aplicado",
-        "Saldo sin aplicar",
+        "Saldo disponible",
     ]
 
     hoja.append(encabezados)
@@ -150,7 +150,7 @@ def generar_excel_cartera(
             True,
         ),
         (
-            "Pagos sin aplicar",
+            "Saldo disponible",
             resumen.saldo_pagos_sin_aplicar,
             True,
         ),
@@ -247,7 +247,7 @@ def generar_excel_cartera(
         "Saldo vigente",
         "Saldo vencido",
         "Días atraso",
-        "Pagos sin aplicar",
+        "Saldo disponible",
         "Pendientes",
         "Parciales",
         "Vencidas",

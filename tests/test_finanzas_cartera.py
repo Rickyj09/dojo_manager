@@ -398,7 +398,7 @@ def test_vista_pago_sin_aplicar_visible(app, db, base_data):
     response = client.get(f"/finanzas/alumnos/{obligacion.alumno_id}/estado-cuenta")
 
     assert response.status_code == 200
-    assert b"Saldo de pagos sin aplicar" in response.data
+    assert b"Saldo disponible" in response.data
     assert b"50.00" in response.data
 
 
@@ -801,7 +801,7 @@ def test_vista_detalle_pago(app, db, base_data):
     assert response.status_code == 200
     assert b"Pago financiero" in response.data
     assert b"REC-1" in response.data
-    assert b"Disponible" in response.data
+    assert b"Saldo disponible" in response.data
 
 
 def test_vista_detalle_pago_bloquea_otro_tenant(app, db, base_data):
@@ -959,7 +959,7 @@ def test_vista_detalle_muestra_saldo_sin_aplicar(app, db, base_data):
     response = client.get(f"/finanzas/pagos/{pago.id}")
 
     assert response.status_code == 200
-    assert b"Disponible" in response.data
+    assert b"Saldo disponible" in response.data
     assert b"50.00" in response.data
 
 

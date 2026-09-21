@@ -938,7 +938,7 @@ def test_exportar_excel_pagos_genera_xlsx_valido(
         "Moneda",
         "Valor",
         "Aplicado",
-        "Saldo sin aplicar",
+        "Saldo disponible",
     ]
 
     assert hoja.max_row == 2
@@ -1138,7 +1138,7 @@ def test_exportar_excel_cartera_genera_resumen_y_detalle(
         "Saldo vigente",
         "Saldo vencido",
         "Días atraso",
-        "Pagos sin aplicar",
+        "Saldo disponible",
         "Pendientes",
         "Parciales",
         "Vencidas",
