@@ -301,6 +301,7 @@ def generar_obligaciones():
     generado = False
     error = None
     status = 200
+    vencimiento_pasado = False
     firma = URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="generacion-pensiones")
     if request.method == "POST":
         try:
@@ -336,9 +337,23 @@ def generar_obligaciones():
             current_app.logger.exception("Error en generación de pensiones")
             resumen = None
             error, status = "No se pudo completar la operación. No se guardaron obligaciones. Vuelva a intentarlo.", 500
-    return render_template("finanzas/generar_obligaciones.html", periodo=periodo,
-                           resumen=resumen, token=token, generado=generado, error=error), status
+        if (
+                resumen is not None
+                and resumen.fecha_vencimiento is not None
+            ):
+            vencimiento_pasado = (
+                 resumen.fecha_vencimiento < date.today()
+        )
 
+    return render_template(
+        "finanzas/generar_obligaciones.html",
+        periodo=periodo,
+        resumen=resumen,
+        token=token,
+        generado=generado,
+        error=error,
+        vencimiento_pasado=vencimiento_pasado,
+    ), status
 
 @finanzas_bp.route("/asignaciones")
 @login_required

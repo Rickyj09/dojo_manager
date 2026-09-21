@@ -23,10 +23,49 @@
     <dt class="col-sm-8">Con asignación financiera válida para el período</dt><dd class="col-sm-4" id="con-plan">{{ resumen.con_plan }}</dd>
     <dt class="col-sm-8">Ya existentes</dt><dd class="col-sm-4" id="existentes">{{ resumen.existentes }}</dd>
     <dt class="col-sm-8">Omitidos sin configuración válida</dt><dd class="col-sm-4" id="omitidos">{{ resumen.sin_plan }}</dd>
-    <dt class="col-sm-8">Nuevas obligaciones</dt><dd class="col-sm-4" id="nuevas">{{ resumen.creados }}</dd>
-    <dt class="col-sm-8">{{ 'Total generado' if generado else 'Total nuevas obligaciones' }}</dt><dd class="col-sm-4" id="total">{% for moneda, total in resumen.totales.items() %}<div>{{ moneda }} {{ '%.2f'|format(total) }}</div>{% else %}Sin nuevas obligaciones{% endfor %}</dd>
-    <dt class="col-sm-8">Fecha de vencimiento</dt><dd class="col-sm-4">{{ resumen.fecha_vencimiento.strftime('%d/%m/%Y') if resumen.fecha_vencimiento else 'Sin vencimiento configurado' }}</dd>
-  </dl>
+    <dt class="col-sm-8">
+  Nuevas obligaciones
+</dt>
+<dd class="col-sm-4" id="nuevas">
+  {{ resumen.creados }}
+</dd>
+
+<dt class="col-sm-8">
+  {{ 'Valor total generado' if generado else 'Valor total a generar' }}
+</dt>
+<dd class="col-sm-4" id="total">
+  {% for moneda, total in resumen.totales.items() %}
+    <div>{{ moneda }} {{ '%.2f'|format(total) }}</div>
+  {% else %}
+    Sin nuevas obligaciones
+  {% endfor %}
+</dd>
+
+<dt class="col-sm-8">
+  Fecha de vencimiento
+</dt>
+<dd class="col-sm-4">
+  {{
+    resumen.fecha_vencimiento.strftime('%d/%m/%Y')
+    if resumen.fecha_vencimiento
+    else 'Sin vencimiento configurado'
+  }}
+</dd>
+</dl>
+
+{% if not generado
+      and resumen.creados
+      and vencimiento_pasado %}
+<div class="alert alert-warning" role="alert">
+  <strong>Atención:</strong>
+  la fecha de vencimiento calculada
+  <strong>{{ resumen.fecha_vencimiento.strftime('%d/%m/%Y') }}</strong>
+  ya pasó.
+  Si confirma la generación, las nuevas obligaciones conservarán
+  esa fecha y podrán aparecer inmediatamente como vencidas.
+</div>
+{% endif %}
+
   {% if not resumen.evaluados %}<div class="alert alert-info">No hay alumnos elegibles para generar pensiones en este período.</div>
   {% elif not resumen.creados and resumen.existentes and not resumen.sin_plan %}<div class="alert alert-info">Las obligaciones del período {{ periodo }} ya habían sido generadas.</div>{% endif %}
   {% if generado and resumen.creados %}<div class="alert alert-success" role="status">{{ resumen.creados }} {{ 'obligación generada correctamente.' if resumen.creados == 1 else 'obligaciones generadas correctamente.' }}</div>{% endif %}
