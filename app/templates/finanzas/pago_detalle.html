@@ -227,9 +227,15 @@
           {% endfor %}
         </tbody>
       </table>
-      <button class="btn btn-primary" type="submit" {% if not obligaciones_aplicables %}disabled{% endif %}>
-        <i class="bi bi-check2-circle"></i> Aplicar valores
-      </button>
+      {% if obligaciones_aplicables %}
+  <button
+    class="btn btn-primary"
+    type="submit"
+  >
+    <i class="bi bi-check2-circle"></i>
+    Aplicar valores
+  </button>
+  {% endif %}
     </form>
   </div>
 </div>

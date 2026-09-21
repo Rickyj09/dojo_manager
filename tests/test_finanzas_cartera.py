@@ -725,6 +725,70 @@ def test_profesor_no_ve_acciones_de_pago(app, db, base_data):
     assert b"Aplicar pago" not in detalle_response.data
     assert b"Anular pago" not in detalle_response.data
 
+def test_vista_detalle_pago_oculta_aplicar_valores_sin_obligaciones(
+    app,
+    db,
+    base_data,
+):
+    pago = registrar_pago(
+        academia_id=base_data["academia_a"].id,
+        alumno_id=base_data["alumno_a1"].id,
+        fecha_pago=date(2026, 9, 5),
+        valor=Decimal("100.00"),
+        medio_pago="EFECTIVO",
+        referencia="SIN-OBLIGACIONES",
+    )
+    db.session.commit()
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        f"/finanzas/pagos/{pago.id}"
+    )
+
+    assert response.status_code == 200
+    assert (
+        b"Sin obligaciones pendientes para aplicar"
+        in response.data
+    )
+    assert b"Aplicar valores" not in response.data
+
+
+def test_vista_detalle_pago_muestra_aplicar_valores_con_obligaciones(
+    app,
+    db,
+    base_data,
+):
+    obligacion = crear_plan_y_obligacion(
+        db,
+        base_data,
+        valor="50.00",
+    )
+
+    pago = registrar_pago(
+        academia_id=obligacion.academia_id,
+        alumno_id=obligacion.alumno_id,
+        fecha_pago=date(2026, 9, 5),
+        valor=Decimal("100.00"),
+        medio_pago="EFECTIVO",
+        referencia="CON-OBLIGACIONES",
+    )
+    db.session.commit()
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    response = client.get(
+        f"/finanzas/pagos/{pago.id}"
+    )
+
+    assert response.status_code == 200
+    assert b"Aplicar valores" in response.data
+    assert (
+        f'aplicar_{obligacion.id}'.encode()
+        in response.data
+    )
 
 def test_vista_detalle_pago(app, db, base_data):
     pago = registrar_pago(academia_id=base_data["academia_a"].id, alumno_id=base_data["alumno_a1"].id, fecha_pago=date(2026, 9, 5), valor=Decimal("100.00"), medio_pago="EFECTIVO", referencia="REC-1")
