@@ -15,7 +15,7 @@ from app.models.sucursal import Sucursal
 from io import BytesIO
 
 from openpyxl import load_workbook
-
+from app.models.role import Role
 def login(client, user):
     response = client.post(
         "/auth/login",
@@ -52,10 +52,10 @@ def crear_pago(
     _db.session.commit()
     return pago
 
-
 def crear_obligacion(
     base_data,
     *,
+    academia_key="academia_a",
     alumno_key="alumno_a1",
     valor="50.00",
     periodo="2026-09",
@@ -64,7 +64,7 @@ def crear_obligacion(
     valor_decimal = Decimal(valor)
 
     obligacion = ObligacionFinanciera(
-        academia_id=base_data["academia_a"].id,
+        academia_id=base_data[academia_key].id,
         alumno_id=base_data[alumno_key].id,
         alumno_plan_financiero_id=None,
         periodo=periodo,
@@ -1319,3 +1319,242 @@ def test_profesor_excel_cartera_limita_a_sucursal(
 
     assert nombre_visible in nombres
     assert nombre_oculto not in nombres
+def test_profesor_no_puede_ver_recibo_de_otra_sucursal(
+    app,
+    db,
+    base_data,
+):
+    sucursal_otro = Sucursal(
+        nombre="Sucursal recibo externa",
+        academia_id=base_data["academia_a"].id,
+        activo=True,
+    )
+
+    _db.session.add(sucursal_otro)
+    _db.session.flush()
+
+    base_data["alumno_a2"].sucursal_id = sucursal_otro.id
+    _db.session.commit()
+
+    pago = crear_pago(
+        base_data,
+        alumno_key="alumno_a2",
+        valor="40.00",
+        referencia="RECIBO-OTRA-SUCURSAL",
+    )
+
+    client = app.test_client()
+    login(client, base_data["profesor_a"])
+
+    response = client.get(
+        f"/finanzas/pagos/{pago.id}/recibo"
+    )
+
+    assert response.status_code == 403
+
+
+def test_rol_sin_finanzas_no_accede_a_reportes_b7(
+    app,
+    db,
+    base_data,
+):
+    role = Role.query.filter_by(
+        name="COACH"
+    ).first()
+
+    if role is None:
+        role = Role(
+            name="COACH",
+            description="COACH",
+        )
+        _db.session.add(role)
+        _db.session.flush()
+
+    usuario = base_data["admin_a"]
+    usuario.roles = [role]
+    _db.session.commit()
+
+    client = app.test_client()
+    login(client, usuario)
+
+    endpoints = [
+        "/finanzas/reportes/pagos",
+        "/finanzas/reportes/pagos/excel",
+        "/finanzas/reportes/cartera",
+        "/finanzas/reportes/cartera/excel",
+    ]
+
+    for endpoint in endpoints:
+        response = client.get(endpoint)
+        assert response.status_code == 403
+
+
+def test_superadmin_con_academia_accede_a_reportes_b7(
+    app,
+    db,
+    base_data,
+):
+    role = Role.query.filter_by(
+        name="SUPERADMIN"
+    ).first()
+
+    if role is None:
+        role = Role(
+            name="SUPERADMIN",
+            description="Acceso total",
+        )
+        _db.session.add(role)
+        _db.session.flush()
+
+    usuario = base_data["admin_a"]
+    usuario.roles = [role]
+    _db.session.commit()
+
+    client = app.test_client()
+    login(client, usuario)
+
+    endpoints = [
+        "/finanzas/reportes/pagos",
+        "/finanzas/reportes/pagos/excel",
+        "/finanzas/reportes/cartera",
+        "/finanzas/reportes/cartera/excel",
+    ]
+
+    for endpoint in endpoints:
+        response = client.get(endpoint)
+        assert response.status_code == 200
+
+
+def test_reportes_b7_respetan_tenant_en_excel(
+    app,
+    db,
+    base_data,
+):
+    crear_pago(
+        base_data,
+        academia_key="academia_a",
+        alumno_key="alumno_a1",
+        valor="60.00",
+        referencia="TENANT-A-PAGO",
+    )
+
+    crear_pago(
+        base_data,
+        academia_key="academia_b",
+        alumno_key="alumno_b1",
+        valor="900.00",
+        referencia="TENANT-B-PAGO",
+    )
+
+    crear_obligacion(
+        base_data,
+        academia_key="academia_a",
+        alumno_key="alumno_a1",
+        valor="60.00",
+        concepto="TENANT-A-CARTERA",
+    )
+
+    crear_obligacion(
+        base_data,
+        academia_key="academia_b",
+        alumno_key="alumno_b1",
+        valor="900.00",
+        concepto="TENANT-B-CARTERA",
+    )
+
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    pagos_response = client.get(
+        "/finanzas/reportes/pagos/excel"
+    )
+
+    assert pagos_response.status_code == 200
+
+    libro_pagos = load_workbook(
+        BytesIO(pagos_response.data),
+        data_only=True,
+    )
+
+    hoja_pagos = libro_pagos["Pagos"]
+
+    referencias = [
+        hoja_pagos.cell(
+            row=fila,
+            column=5,
+        ).value
+        for fila in range(
+            2,
+            hoja_pagos.max_row + 1,
+        )
+    ]
+
+    assert "TENANT-A-PAGO" in referencias
+    assert "TENANT-B-PAGO" not in referencias
+
+    cartera_response = client.get(
+        "/finanzas/reportes/cartera/excel"
+    )
+
+    assert cartera_response.status_code == 200
+
+    libro_cartera = load_workbook(
+        BytesIO(cartera_response.data),
+        data_only=True,
+    )
+
+    hoja_cartera = libro_cartera["Cartera"]
+
+    nombres = [
+        hoja_cartera.cell(
+            row=fila,
+            column=1,
+        ).value
+        for fila in range(
+            2,
+            hoja_cartera.max_row + 1,
+        )
+    ]
+
+    nombre_a = (
+        f"{base_data['alumno_a1'].apellidos} "
+        f"{base_data['alumno_a1'].nombres}"
+    )
+
+    nombre_b = (
+        f"{base_data['alumno_b1'].apellidos} "
+        f"{base_data['alumno_b1'].nombres}"
+    )
+
+    assert nombre_a in nombres
+    assert nombre_b not in nombres
+
+
+def test_reportes_b7_enlazan_exportacion_excel(
+    app,
+    db,
+    base_data,
+):
+    client = app.test_client()
+    login(client, base_data["admin_a"])
+
+    pagos = client.get(
+        "/finanzas/reportes/pagos"
+    )
+
+    cartera = client.get(
+        "/finanzas/reportes/cartera"
+    )
+
+    assert pagos.status_code == 200
+    assert cartera.status_code == 200
+
+    assert (
+        b"/finanzas/reportes/pagos/excel"
+        in pagos.data
+    )
+
+    assert (
+        b"/finanzas/reportes/cartera/excel"
+        in cartera.data
+    )
