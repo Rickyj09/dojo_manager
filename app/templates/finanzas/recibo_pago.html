@@ -1,458 +1,429 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
   <meta charset="UTF-8">
+
   <meta
     name="viewport"
     content="width=device-width, initial-scale=1"
   >
 
-  <title>{{ numero_recibo }} - Recibo de pago</title>
+  <title>
+    {{ numero_recibo }} - Recibo interno de pago
+  </title>
 
-  <style>
-    :root {
-      font-family: Arial, Helvetica, sans-serif;
-      color: #212529;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      padding: 24px;
-      background: #f4f6f8;
-    }
-
-    .receipt {
-      width: 100%;
-      max-width: 850px;
-      margin: 0 auto;
-      background: #ffffff;
-      border: 1px solid #dee2e6;
-      border-radius: 8px;
-      padding: 32px;
-    }
-
-    .actions {
-      width: 100%;
-      max-width: 850px;
-      margin: 0 auto 16px auto;
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-    }
-
-    .btn {
-      display: inline-block;
-      padding: 9px 16px;
-      border-radius: 5px;
-      border: 1px solid #6c757d;
-      background: #ffffff;
-      color: #212529;
-      font-size: 14px;
-      text-decoration: none;
-      cursor: pointer;
-    }
-
-    .btn-primary {
-      background: #0d6efd;
-      border-color: #0d6efd;
-      color: #ffffff;
-    }
-
-    .header {
-      display: flex;
-      justify-content: space-between;
-      gap: 24px;
-      padding-bottom: 20px;
-      border-bottom: 2px solid #212529;
-    }
-
-    .academy h1 {
-      margin: 0 0 6px 0;
-      font-size: 24px;
-    }
-
-    .academy p {
-      margin: 0;
-      color: #6c757d;
-    }
-
-    .receipt-number {
-      text-align: right;
-    }
-
-    .receipt-number h2 {
-      margin: 0 0 8px 0;
-      font-size: 20px;
-    }
-
-    .receipt-number strong {
-      font-size: 18px;
-    }
-
-    .status {
-      display: inline-block;
-      margin-top: 8px;
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: bold;
-      border: 1px solid #6c757d;
-    }
-
-    .status-registrado {
-      border-color: #198754;
-      color: #198754;
-    }
-
-    .status-anulado {
-      border-color: #dc3545;
-      color: #dc3545;
-    }
-
-    .section {
-      margin-top: 26px;
-    }
-
-    .section-title {
-      margin-bottom: 12px;
-      padding-bottom: 7px;
-      border-bottom: 1px solid #dee2e6;
-      font-size: 16px;
-      font-weight: bold;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px 30px;
-    }
-
-    .field-label {
-      display: block;
-      margin-bottom: 3px;
-      color: #6c757d;
-      font-size: 12px;
-      text-transform: uppercase;
-    }
-
-    .field-value {
-      font-size: 15px;
-      font-weight: 500;
-    }
-
-    .totals {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 15px;
-      margin-top: 24px;
-    }
-
-    .total-box {
-      border: 1px solid #dee2e6;
-      border-radius: 6px;
-      padding: 16px;
-    }
-
-    .total-box span {
-      display: block;
-      margin-bottom: 5px;
-      color: #6c757d;
-      font-size: 12px;
-    }
-
-    .total-box strong {
-      font-size: 20px;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-
-    th,
-    td {
-      padding: 10px 8px;
-      border-bottom: 1px solid #dee2e6;
-      text-align: left;
-      vertical-align: top;
-      font-size: 14px;
-    }
-
-    th {
-      background: #f8f9fa;
-    }
-
-    .money {
-      text-align: right;
-      white-space: nowrap;
-    }
-
-    .anulado-message {
-      margin-top: 20px;
-      padding: 12px 16px;
-      border: 2px solid #dc3545;
-      color: #dc3545;
-      font-weight: bold;
-      text-align: center;
-    }
-
-    .footer {
-      margin-top: 35px;
-      padding-top: 16px;
-      border-top: 1px solid #dee2e6;
-      color: #6c757d;
-      font-size: 12px;
-      text-align: center;
-    }
-
-    @media (max-width: 700px) {
-      body {
-        padding: 10px;
-      }
-
-      .receipt {
-        padding: 20px;
-      }
-
-      .header {
-        display: block;
-      }
-
-      .receipt-number {
-        margin-top: 20px;
-        text-align: left;
-      }
-
-      .grid,
-      .totals {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    @media print {
-      @page {
-        size: A4;
-        margin: 15mm;
-      }
-
-      body {
-        padding: 0;
-        background: #ffffff;
-      }
-
-      .no-print {
-        display: none !important;
-      }
-
-      .receipt {
-        max-width: none;
-        border: none;
-        border-radius: 0;
-        padding: 0;
-      }
-    }
-  </style>
+  <link
+    rel="stylesheet"
+    href="{{ url_for(
+      'static',
+      filename='css/recibo_pago.css'
+    ) }}"
+  >
 </head>
 
 <body>
+
   {% set pago = detalle.pago %}
   {% set alumno = detalle.alumno %}
 
-  <div class="actions no-print">
+  <div class="receipt-actions no-print">
+
     <a
-      class="btn"
-      href="{{ url_for('finanzas.detalle_pago', pago_id=pago.id) }}"
+      class="receipt-button"
+      href="{{ url_for(
+        'finanzas.detalle_pago',
+        pago_id=pago.id
+      ) }}"
     >
-      Volver al pago
+      ← Volver al pago
     </a>
 
     <button
-      class="btn btn-primary"
+      id="btn-imprimir-recibo"
+      class="receipt-button receipt-button-primary"
       type="button"
-      onclick="window.print()"
     >
       Imprimir recibo
     </button>
+
   </div>
 
+
   <main class="receipt">
-    <header class="header">
-      <div class="academy">
-        <h1>{{ academia.nombre }}</h1>
 
-        {% if academia.ciudad %}
-          <p>{{ academia.ciudad }}</p>
-        {% endif %}
-      </div>
+    <header class="receipt-header">
 
-      <div class="receipt-number">
-        <h2>Recibo interno de pago</h2>
+      <div class="receipt-brand">
 
-        <strong>{{ numero_recibo }}</strong>
+        <img
+          class="receipt-logo"
+          src="{{ url_for(
+            'static',
+            filename=(tenant_logo or app_logo)
+          ) }}"
+          alt="Logo de {{ academia.nombre }}"
+        >
 
-        <div>
-          <span
-            class="status {% if pago.estado == 'ANULADO' %}status-anulado{% else %}status-registrado{% endif %}"
-          >
-            {{ pago.estado }}
-          </span>
+        <div class="receipt-brand-text">
+
+          <h1 class="receipt-academy-name">
+            {{ academia.nombre }}
+          </h1>
+
+          <p class="receipt-platform">
+            Plataforma Dojo_Manager
+          </p>
+
+          {% if academia.ciudad %}
+            <p class="receipt-city">
+              {{ academia.ciudad }}
+            </p>
+          {% endif %}
+
         </div>
+
       </div>
+
+
+      <div class="receipt-identification">
+
+        <h2 class="receipt-title">
+          Recibo interno de pago
+        </h2>
+
+        <span class="receipt-number-label">
+          Número de recibo
+        </span>
+
+        <strong class="receipt-number">
+          {{ numero_recibo }}
+        </strong>
+
+        {% if pago.estado == "ANULADO" %}
+
+          <span
+            class="receipt-status
+                   receipt-status-cancelled"
+          >
+            ANULADO
+          </span>
+
+        {% else %}
+
+          <span
+            class="receipt-status
+                   receipt-status-registered"
+          >
+            REGISTRADO
+          </span>
+
+        {% endif %}
+
+      </div>
+
     </header>
 
+
     {% if pago.estado == "ANULADO" %}
-      <div class="anulado-message">
-        PAGO ANULADO
+
+      <div class="receipt-cancelled-alert">
+        PAGO ANULADO — documento conservado
+        únicamente para trazabilidad.
       </div>
+
     {% endif %}
 
-    <section class="section">
-      <div class="section-title">
+
+    <section class="receipt-section">
+
+      <h3 class="receipt-section-title">
         Datos del alumno
-      </div>
+      </h3>
 
-      <div class="grid">
-        <div>
-          <span class="field-label">Alumno</span>
-          <span class="field-value">
-            {{ alumno.nombres }} {{ alumno.apellidos }}
+      <div class="receipt-data-grid">
+
+        <div class="receipt-field">
+
+          <span class="receipt-label">
+            Alumno
           </span>
+
+          <span class="receipt-value">
+            {{ alumno.nombres }}
+            {{ alumno.apellidos }}
+          </span>
+
         </div>
 
-        <div>
-          <span class="field-label">Identificación</span>
-          <span class="field-value">
-            {{ alumno.numero_identidad or "No registrada" }}
+
+        <div class="receipt-field">
+
+          <span class="receipt-label">
+            Identificación
           </span>
+
+          <span class="receipt-value">
+            {{ alumno.numero_identidad
+               or "No registrada" }}
+          </span>
+
         </div>
+
       </div>
+
     </section>
 
-    <section class="section">
-      <div class="section-title">
-        Datos del pago
-      </div>
 
-      <div class="grid">
-        <div>
-          <span class="field-label">Fecha de pago</span>
-          <span class="field-value">
-            {{ pago.fecha_pago.strftime("%d/%m/%Y") }}
+    <section class="receipt-section">
+
+      <h3 class="receipt-section-title">
+        Datos del pago
+      </h3>
+
+      <div class="receipt-data-grid">
+
+        <div class="receipt-field">
+
+          <span class="receipt-label">
+            Fecha de pago
           </span>
+
+          <span class="receipt-value">
+            {{ pago.fecha_pago.strftime(
+              "%d/%m/%Y"
+            ) }}
+          </span>
+
         </div>
 
-        <div>
-          <span class="field-label">Medio de pago</span>
-          <span class="field-value">
+
+        <div class="receipt-field">
+
+          <span class="receipt-label">
+            Medio de pago
+          </span>
+
+          <span class="receipt-value">
             {{ pago.medio_pago }}
           </span>
+
         </div>
 
-        <div>
-          <span class="field-label">Referencia</span>
-          <span class="field-value">
-            {{ pago.referencia or "Sin referencia" }}
+
+        <div class="receipt-field">
+
+          <span class="receipt-label">
+            Referencia
           </span>
+
+          <span class="receipt-value">
+            {{ pago.referencia
+               or "Sin referencia" }}
+          </span>
+
         </div>
 
-        <div>
-          <span class="field-label">Moneda</span>
-          <span class="field-value">
+
+        <div class="receipt-field">
+
+          <span class="receipt-label">
+            Moneda
+          </span>
+
+          <span class="receipt-value">
             {{ pago.moneda }}
           </span>
+
         </div>
 
-        <div>
-          <span class="field-label">Observación</span>
-          <span class="field-value">
-            {{ pago.observacion or "Sin observación" }}
+
+        <div
+          class="receipt-field
+                 receipt-field-wide"
+        >
+
+          <span class="receipt-label">
+            Observación
           </span>
+
+          <span class="receipt-value">
+            {{ pago.observacion
+               or "Sin observación" }}
+          </span>
+
         </div>
+
       </div>
+
     </section>
 
-    <div class="totals">
-      <div class="total-box">
-        <span>Monto recibido</span>
-        <strong>
+
+    <section
+      class="receipt-summary"
+      aria-label="Resumen financiero"
+    >
+
+      <div class="receipt-summary-card">
+
+        <span class="receipt-summary-label">
+          Monto recibido
+        </span>
+
+        <strong class="receipt-summary-value">
           {{ pago.moneda }}
           {{ "%.2f"|format(pago.valor) }}
         </strong>
+
       </div>
 
-      <div class="total-box">
-        <span>Total aplicado</span>
-        <strong>
+
+      <div class="receipt-summary-card">
+
+        <span class="receipt-summary-label">
+          Total aplicado
+        </span>
+
+        <strong class="receipt-summary-value">
           {{ pago.moneda }}
-          {{ "%.2f"|format(detalle.total_aplicado) }}
+          {{ "%.2f"|format(
+            detalle.total_aplicado
+          ) }}
         </strong>
+
       </div>
 
-      <div class="total-box">
-        <span>Saldo sin aplicar</span>
-        <strong>
+
+      <div
+        class="receipt-summary-card
+               receipt-summary-card-highlight"
+      >
+
+        <span class="receipt-summary-label">
+          Saldo disponible
+        </span>
+
+        <strong class="receipt-summary-value">
           {{ pago.moneda }}
-          {{ "%.2f"|format(detalle.saldo_sin_aplicar) }}
+          {{ "%.2f"|format(
+            detalle.saldo_sin_aplicar
+          ) }}
         </strong>
+
+        {% if detalle.saldo_sin_aplicar > 0 %}
+
+          <span class="receipt-summary-help">
+            Valor aún no asignado a obligaciones.
+          </span>
+
+        {% endif %}
+
       </div>
-    </div>
 
-    <section class="section">
-      <div class="section-title">
-        Aplicaciones del pago
-      </div>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Periodo</th>
-            <th>Tipo</th>
-            <th>Concepto</th>
-            <th class="money">Valor aplicado</th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {% for item in detalle.aplicaciones %}
-            <tr>
-              <td>
-                {{ item.obligacion.periodo }}
-              </td>
-
-              <td>
-                {{ item.obligacion.tipo_obligacion }}
-              </td>
-
-              <td>
-                {{ item.obligacion.concepto }}
-              </td>
-
-              <td class="money">
-                {{ pago.moneda }}
-                {{ "%.2f"|format(item.aplicacion.valor_aplicado) }}
-              </td>
-            </tr>
-          {% else %}
-            <tr>
-              <td colspan="4">
-                Este pago todavía no tiene aplicaciones.
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
     </section>
 
-    <footer class="footer">
-      <strong>Documento de control interno.</strong>
-      No constituye factura ni comprobante tributario.
-      <br>
-      Generado por Dojo_Manager.
+
+    <section class="receipt-section">
+
+      <h3 class="receipt-section-title">
+        Aplicaciones del pago
+      </h3>
+
+      <div class="receipt-table-wrapper">
+
+        <table class="receipt-table">
+
+          <thead>
+
+            <tr>
+              <th>Periodo</th>
+              <th>Tipo</th>
+              <th>Concepto</th>
+
+              <th class="money">
+                Valor aplicado
+              </th>
+            </tr>
+
+          </thead>
+
+          <tbody>
+
+            {% for item in detalle.aplicaciones %}
+
+              <tr>
+
+                <td>
+                  {{ item.obligacion.periodo }}
+                </td>
+
+                <td>
+                  {{ item.obligacion.tipo_obligacion }}
+                </td>
+
+                <td>
+                  {{ item.obligacion.concepto }}
+                </td>
+
+                <td class="money">
+                  {{ pago.moneda }}
+                  {{ "%.2f"|format(
+                    item.aplicacion.valor_aplicado
+                  ) }}
+                </td>
+
+              </tr>
+
+            {% else %}
+
+              <tr>
+
+                <td
+                  colspan="4"
+                  class="receipt-empty"
+                >
+                  Este pago todavía no tiene aplicaciones.
+                </td>
+
+              </tr>
+
+            {% endfor %}
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+    </section>
+
+
+    <footer class="receipt-footer">
+
+      <div>
+        <strong>
+          Documento de control interno.
+        </strong>
+
+        No constituye factura ni comprobante tributario.
+      </div>
+
+      <div class="receipt-generated">
+        Generado por Dojo_Manager.
+      </div>
+
     </footer>
+
   </main>
+
+
+  <script
+    src="{{ url_for(
+      'static',
+      filename='js/recibo_pago.js'
+    ) }}"
+  ></script>
+
 </body>
+
 </html>
