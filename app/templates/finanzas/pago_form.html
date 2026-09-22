@@ -1,55 +1,233 @@
 {% extends "base_admin.html" %}
+
 {% block title %}Registrar pago financiero{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-4">
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
   <div>
     <h3 class="mb-1">Registrar pago</h3>
-    <p class="text-muted mb-0">{{ alumno.nombres }} {{ alumno.apellidos }}</p>
+    <p class="text-muted mb-0">
+      {{ alumno.nombres }} {{ alumno.apellidos }}
+    </p>
   </div>
-  <a href="{{ url_for('finanzas.estado_cuenta_alumno', alumno_id=alumno.id) }}" class="btn btn-outline-secondary">
-    <i class="bi bi-arrow-left"></i> Estado
+
+  <a
+    href="{{ url_for('finanzas.estado_cuenta_alumno', alumno_id=alumno.id) }}"
+    class="btn btn-outline-secondary"
+  >
+    <i class="bi bi-arrow-left"></i>
+    Estado de cuenta
   </a>
 </div>
 
+<div class="row g-3 mb-4">
+
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small mb-1">
+          Saldo pendiente
+        </div>
+
+        <div
+          class="fs-4 fw-semibold"
+          id="saldo-pendiente"
+        >
+          USD {{ '%.2f'|format(estado_cuenta.saldo_pendiente) }}
+        </div>
+
+        <div class="text-muted small mt-1">
+          Obligaciones todavía pendientes de pago.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small mb-1">
+          Saldo disponible
+        </div>
+
+        <div
+          class="fs-4 fw-semibold"
+          id="saldo-disponible"
+        >
+          USD {{ '%.2f'|format(estado_cuenta.saldo_pagos_sin_aplicar) }}
+        </div>
+
+        <div class="text-muted small mt-1">
+          Pagos registrados todavía disponibles para aplicar.
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{% if estado_cuenta.saldo_pendiente <= 0 %}
+<div
+  class="alert alert-info"
+  id="aviso-sin-obligaciones"
+  role="alert"
+>
+  <strong>El alumno no tiene obligaciones pendientes.</strong>
+  Puede registrar el pago normalmente, pero el valor quedará
+  como saldo disponible para aplicarlo posteriormente.
+</div>
+{% endif %}
+
 <div class="card shadow-sm">
+  <div class="card-header bg-body-tertiary">
+    <strong>Datos del pago</strong>
+  </div>
+
   <div class="card-body">
+
     <form method="post" class="row g-3">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <input
+        type="hidden"
+        name="csrf_token"
+        value="{{ csrf_token() }}"
+      >
+
       <div class="col-md-3">
-        <label class="form-label" for="fecha_pago">Fecha de pago</label>
-        <input class="form-control" id="fecha_pago" name="fecha_pago" type="date" value="{{ form.fecha_pago }}" required>
+        <label
+          class="form-label"
+          for="fecha_pago"
+        >
+          Fecha de pago
+        </label>
+
+        <input
+          class="form-control"
+          id="fecha_pago"
+          name="fecha_pago"
+          type="date"
+          value="{{ form.fecha_pago }}"
+          required
+        >
       </div>
+
       <div class="col-md-3">
-        <label class="form-label" for="valor">Valor</label>
-        <input class="form-control" id="valor" name="valor" type="text" inputmode="decimal" value="{{ form.valor }}" required>
+        <label
+          class="form-label"
+          for="valor"
+        >
+          Monto recibido
+        </label>
+
+        <input
+          class="form-control"
+          id="valor"
+          name="valor"
+          type="text"
+          inputmode="decimal"
+          value="{{ form.valor }}"
+          placeholder="0.00"
+          required
+        >
+
+        <div class="form-text">
+          Ingrese un valor mayor a cero.
+        </div>
       </div>
+
       <div class="col-md-2">
-        <label class="form-label" for="moneda">Moneda</label>
-        <input class="form-control" id="moneda" name="moneda" maxlength="3" value="{{ form.moneda }}" required>
+        <label
+          class="form-label"
+          for="moneda"
+        >
+          Moneda
+        </label>
+
+        <input
+          class="form-control"
+          id="moneda"
+          name="moneda"
+          maxlength="3"
+          value="{{ form.moneda }}"
+          required
+        >
       </div>
+
       <div class="col-md-4">
-        <label class="form-label" for="medio_pago">Medio</label>
-        <select class="form-select" id="medio_pago" name="medio_pago" required>
+        <label
+          class="form-label"
+          for="medio_pago"
+        >
+          Medio de pago
+        </label>
+
+        <select
+          class="form-select"
+          id="medio_pago"
+          name="medio_pago"
+          required
+        >
           {% for medio in medios_pago %}
-            <option value="{{ medio }}" {% if form.medio_pago == medio %}selected{% endif %}>{{ medio }}</option>
+            <option
+              value="{{ medio }}"
+              {% if form.medio_pago == medio %}selected{% endif %}
+            >
+              {{ medio }}
+            </option>
           {% endfor %}
         </select>
       </div>
+
       <div class="col-md-6">
-        <label class="form-label" for="referencia">Referencia</label>
-        <input class="form-control" id="referencia" name="referencia" value="{{ form.referencia }}">
+        <label
+          class="form-label"
+          for="referencia"
+        >
+          Referencia
+        </label>
+
+        <input
+          class="form-control"
+          id="referencia"
+          name="referencia"
+          value="{{ form.referencia }}"
+        >
+
+        <div class="form-text">
+          Opcional. Ejemplo: número de transferencia o depósito.
+        </div>
       </div>
+
       <div class="col-md-6">
-        <label class="form-label" for="observacion">Observacion</label>
-        <input class="form-control" id="observacion" name="observacion" value="{{ form.observacion }}">
+        <label
+          class="form-label"
+          for="observacion"
+        >
+          Observación
+        </label>
+
+        <input
+          class="form-control"
+          id="observacion"
+          name="observacion"
+          value="{{ form.observacion }}"
+        >
       </div>
+
       <div class="col-12">
-        <button class="btn btn-primary" type="submit">
-          <i class="bi bi-save"></i> Registrar
+        <button
+          class="btn btn-primary"
+          type="submit"
+        >
+          <i class="bi bi-save"></i>
+          Registrar pago
         </button>
       </div>
+
     </form>
+
   </div>
 </div>
+
 {% endblock %}

@@ -2042,7 +2042,16 @@ def nuevo_pago_alumno(alumno_id):
         abort(403)
 
     academia_id = _academia_id_or_403()
-    alumno = _validar_alumno_visible(academia_id, alumno_id)
+    alumno = _validar_alumno_visible(
+        academia_id,
+        alumno_id,
+    )
+
+    estado_cuenta = obtener_estado_cuenta_alumno(
+        academia_id=academia_id,
+        alumno_id=alumno.id,
+    )
+
     form = {
         "fecha_pago": request.form.get("fecha_pago") or date.today().isoformat(),
         "valor": request.form.get("valor") or "",
@@ -2057,26 +2066,49 @@ def nuevo_pago_alumno(alumno_id):
             pago = registrar_pago(
                 academia_id=academia_id,
                 alumno_id=alumno.id,
-                fecha_pago=_parse_fecha_pago(form["fecha_pago"]),
+                fecha_pago=_parse_fecha_pago(
+                    form["fecha_pago"]
+                ),
                 valor=form["valor"],
                 moneda=form["moneda"],
                 medio_pago=form["medio_pago"],
-                referencia=form["referencia"].strip() or None,
-                observacion=form["observacion"].strip() or None,
+                referencia=(
+                    form["referencia"].strip()
+                    or None
+                ),
+                observacion=(
+                    form["observacion"].strip()
+                    or None
+                ),
             )
             db.session.commit()
+
         except FinanzasError as exc:
             db.session.rollback()
-            flash(str(exc), "danger")
+            flash(
+                str(exc),
+                "danger",
+            )
+
         else:
-            flash("Pago registrado correctamente.", "success")
-            return redirect(url_for("finanzas.detalle_pago", pago_id=pago.id))
+            flash(
+                "Pago registrado correctamente.",
+                "success",
+            )
+
+            return redirect(
+                url_for(
+                    "finanzas.detalle_pago",
+                    pago_id=pago.id,
+                )
+            )
 
     return render_template(
         "finanzas/pago_form.html",
         alumno=alumno,
         medios_pago=MEDIOS_PAGO_FINANCIERO,
         form=form,
+        estado_cuenta=estado_cuenta,
     )
 
 

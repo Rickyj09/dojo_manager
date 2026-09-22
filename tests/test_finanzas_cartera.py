@@ -623,6 +623,155 @@ def test_vista_nuevo_pago_get_autorizado(app, db, base_data):
     assert b"Registrar pago" in response.data
     assert b"EFECTIVO" in response.data
 
+def test_vista_nuevo_pago_muestra_contexto_financiero(
+    app,
+    db,
+    base_data,
+):
+    obligacion = crear_plan_y_obligacion(
+        db,
+        base_data,
+        valor="60.00",
+    )
+
+    registrar_pago(
+        academia_id=obligacion.academia_id,
+        alumno_id=obligacion.alumno_id,
+        fecha_pago=date(2026, 9, 5),
+        valor=Decimal("20.00"),
+        medio_pago="EFECTIVO",
+    )
+
+    db.session.commit()
+
+    client = app.test_client()
+
+    login(
+        client,
+        base_data["admin_a"],
+    )
+
+    response = client.get(
+        f"/finanzas/alumnos/"
+        f"{base_data['alumno_a1'].id}"
+        f"/pagos/nuevo"
+    )
+
+    assert response.status_code == 200
+
+    texto = response.get_data(
+        as_text=True,
+    )
+
+    assert "Saldo pendiente" in texto
+    assert "USD 60.00" in texto
+
+    assert "Saldo disponible" in texto
+    assert "USD 20.00" in texto
+
+    assert (
+        'id="aviso-sin-obligaciones"'
+        not in texto
+    )
+
+
+def test_vista_nuevo_pago_advierte_si_no_hay_obligaciones_pendientes(
+    app,
+    db,
+    base_data,
+):
+    client = app.test_client()
+
+    login(
+        client,
+        base_data["admin_a"],
+    )
+
+    response = client.get(
+        f"/finanzas/alumnos/"
+        f"{base_data['alumno_a1'].id}"
+        f"/pagos/nuevo"
+    )
+
+    assert response.status_code == 200
+
+    texto = response.get_data(
+        as_text=True,
+    )
+
+    assert "Saldo pendiente" in texto
+    assert "USD 0.00" in texto
+
+    assert (
+        'id="aviso-sin-obligaciones"'
+        in texto
+    )
+
+    assert (
+        "no tiene obligaciones pendientes"
+        in texto
+    )
+
+    assert (
+        "saldo disponible"
+        in texto
+    )
+
+
+def test_vista_nuevo_pago_saldo_disponible_descuenta_aplicaciones(
+    app,
+    db,
+    base_data,
+):
+    obligacion = crear_plan_y_obligacion(
+        db,
+        base_data,
+        valor="60.00",
+    )
+
+    pago = registrar_pago(
+        academia_id=obligacion.academia_id,
+        alumno_id=obligacion.alumno_id,
+        fecha_pago=date(2026, 9, 5),
+        valor=Decimal("50.00"),
+        medio_pago="EFECTIVO",
+    )
+
+    db.session.commit()
+
+    aplicar_pago(
+        academia_id=obligacion.academia_id,
+        pago_id=pago.id,
+        obligacion_financiera_id=obligacion.id,
+        valor_aplicado=Decimal("20.00"),
+    )
+
+    db.session.commit()
+
+    client = app.test_client()
+
+    login(
+        client,
+        base_data["admin_a"],
+    )
+
+    response = client.get(
+        f"/finanzas/alumnos/"
+        f"{base_data['alumno_a1'].id}"
+        f"/pagos/nuevo"
+    )
+
+    assert response.status_code == 200
+
+    texto = response.get_data(
+        as_text=True,
+    )
+
+    assert "Saldo pendiente" in texto
+    assert "USD 40.00" in texto
+
+    assert "Saldo disponible" in texto
+    assert "USD 30.00" in texto
 
 def test_vista_nuevo_pago_post_valido_redirige_y_crea_pago(app, db, base_data):
     client = app.test_client()
