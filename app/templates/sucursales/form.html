@@ -3,32 +3,85 @@
 </h1>
 
 <form method="POST">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input
+        type="hidden"
+        name="csrf_token"
+        value="{{ csrf_token() }}"
+    >
+
     <label>Nombre</label><br>
-    <input type="text" name="nombre"
-           value="{{ sucursal.nombre if sucursal else '' }}"
-           required><br><br>
+
+    <input
+        type="text"
+        name="nombre"
+        value="{{ sucursal.nombre if sucursal else '' }}"
+        required
+    >
+    <br><br>
 
     <label>Dirección</label><br>
-    <input type="text" name="direccion"
-           value="{{ sucursal.direccion if sucursal else '' }}"><br><br>
+
+    <input
+        type="text"
+        name="direccion"
+        value="{{ sucursal.direccion if sucursal and sucursal.direccion else '' }}"
+    >
+    <br><br>
 
     <label>Academia</label><br>
-    <select name="academia_id" required>
-        {% for a in academias %}
-        <option value="{{ a.id }}"
-            {% if sucursal and sucursal.academia_id == a.id %}selected{% endif %}>
-            {{ a.nombre }}
-        </option>
-        {% endfor %}
-    </select><br><br>
+
+    {% if academia_fija %}
+        <input
+            type="text"
+            value="{{ academia_fija.nombre }}"
+            disabled
+        >
+
+        <div>
+            La sucursal pertenece a su academia actual.
+        </div>
+    {% else %}
+        <select
+            name="academia_id"
+            required
+        >
+            <option value="">
+                Seleccione una academia
+            </option>
+
+            {% for a in academias %}
+                <option
+                    value="{{ a.id }}"
+                    {% if sucursal and sucursal.academia_id == a.id %}
+                        selected
+                    {% endif %}
+                >
+                    {{ a.nombre }}
+                </option>
+            {% endfor %}
+        </select>
+    {% endif %}
+
+    <br><br>
 
     <label>
-        <input type="checkbox" name="activo"
-               {% if not sucursal or sucursal.activo %}checked{% endif %}>
+        <input
+            type="checkbox"
+            name="activo"
+            {% if not sucursal or sucursal.activo %}
+                checked
+            {% endif %}
+        >
         Activo
-    </label><br><br>
+    </label>
 
-    <button type="submit">Guardar</button>
-    <a href="{{ url_for('sucursales.index') }}">Cancelar</a>
+    <br><br>
+
+    <button type="submit">
+        Guardar
+    </button>
+
+    <a href="{{ url_for('sucursales.index') }}">
+        Cancelar
+    </a>
 </form>
