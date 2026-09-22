@@ -34,7 +34,10 @@ def _normalizar_genero(genero):
 def obtener_categoria_competencia(alumno, torneo, modalidad):
     modalidad = (modalidad or "").strip().upper()
     sexo = _normalizar_genero(alumno.genero)
-    edad = calcular_edad(alumno.fecha_nacimiento)
+    edad = calcular_edad(
+    alumno.fecha_nacimiento,
+    torneo.fecha
+    )
 
     if not alumno.fecha_nacimiento:
         return None, "El alumno no tiene fecha de nacimiento registrada."
