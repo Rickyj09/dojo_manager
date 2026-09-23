@@ -1,7 +1,7 @@
 from decimal import Decimal
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash
-from flask_login import login_required
+from flask import Blueprint, render_template, request, redirect, url_for, flash, abort
+from flask_login import login_required, current_user
 
 from app.extensions import db
 from app.models.alumno import Alumno
@@ -21,65 +21,121 @@ participaciones_bp = Blueprint(
 @participaciones_bp.route("/nuevo/<int:alumno_id>", methods=["GET", "POST"])
 @login_required
 def nuevo(alumno_id):
-    alumno = Alumno.query.get_or_404(alumno_id)
-
-    torneos = (
-    Torneo.query
-    .filter_by(academia_id=alumno.academia_id)
-    .order_by(Torneo.fecha.desc())
-    .all()
+    academia_id = getattr(
+        current_user,
+        "academia_id",
+        None,
     )
 
-    # Solo mostrar medallas pertenecientes a la academia del alumno.
+    # Un usuario normal siempre debe pertenecer
+    # a una academia.
+    if (
+        academia_id is None
+        and not current_user.has_role("SUPERADMIN")
+    ):
+        abort(403)
+
+    query_alumno = Alumno.query.filter_by(
+        id=alumno_id
+    )
+
+    if academia_id is not None:
+        query_alumno = query_alumno.filter_by(
+            academia_id=academia_id
+        )
+
+    alumno = query_alumno.first_or_404()
+
+    if current_user.has_role("PROFESOR"):
+        if (
+            alumno.sucursal_id
+            != current_user.sucursal_id
+        ):
+            abort(403)
+
+    torneos = (
+        Torneo.query
+        .filter_by(
+            academia_id=alumno.academia_id
+        )
+        .order_by(
+            Torneo.fecha.desc()
+        )
+        .all()
+    )
+
+    # Solo mostrar medallas pertenecientes
+    # a la academia del alumno.
     medallas = (
         Medalla.query
-        .filter_by(academia_id=alumno.academia_id)
-        .order_by(Medalla.orden)
+        .filter_by(
+            academia_id=alumno.academia_id
+        )
+        .order_by(
+            Medalla.orden
+        )
         .all()
     )
 
     if request.method == "POST":
-        torneo_id = request.form.get("torneo_id")
+        torneo_id = request.form.get(
+            "torneo_id"
+        )
+
         modalidad = (
-            request.form.get("modalidad") or ""
+            request.form.get("modalidad")
+            or ""
         ).strip().upper()
 
-        medalla_id = request.form.get("medalla_id")
+        medalla_id = request.form.get(
+            "medalla_id"
+        )
+
         observacion = (
-            request.form.get("observacion") or ""
+            request.form.get("observacion")
+            or ""
         ).strip() or None
 
-        # ============================================================
+        # ====================================================
         # Validaciones básicas
-        # ============================================================
+        # ====================================================
 
         if not torneo_id or not modalidad:
             flash(
                 "Debe seleccionar torneo y modalidad.",
-                "danger"
+                "danger",
             )
             return redirect(request.url)
 
-        if modalidad not in ("POOMSAE", "COMBATE", "AMBAS"):
+        if modalidad not in (
+            "POOMSAE",
+            "COMBATE",
+            "AMBAS",
+        ):
             flash(
                 "Modalidad inválida.",
-                "danger"
+                "danger",
             )
             return redirect(request.url)
 
         try:
-            torneo_id_int = int(torneo_id)
+            torneo_id_int = int(
+                torneo_id
+            )
         except (TypeError, ValueError):
             flash(
                 "Torneo inválido.",
-                "danger"
+                "danger",
             )
             return redirect(request.url)
 
         torneo = Torneo.query.filter_by(
             id=torneo_id_int,
-            academia_id=alumno.academia_id
+            academia_id=alumno.academia_id,
         ).first_or_404()
+
+        # ============================================================
+        # Medalla
 
         # ============================================================
         # Medalla
