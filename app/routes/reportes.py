@@ -1,4 +1,13 @@
-from flask import Blueprint, render_template, request, send_file, flash, redirect, url_for
+from flask import (
+    Blueprint,
+    abort,
+    flash,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    url_for,
+)
 from flask_login import login_required, current_user
 from app.extensions import db
 from app.models.alumno import Alumno
@@ -81,11 +90,138 @@ def _get_identidad_col():
             return getattr(Alumno, attr)
     return Alumno.id  # fallback
 
+def _academia_id_actual():
+    """
+    ADMIN/PROFESOR:
+        trabajan únicamente con su academia.
+
+    SUPERADMIN con academia:
+        trabaja con su academia.
+
+    SUPERADMIN global sin academia:
+        puede consultar globalmente.
+    """
+    academia_id = getattr(
+        current_user,
+        "academia_id",
+        None,
+    )
+
+    if academia_id:
+        return academia_id
+
+    if current_user.has_role("SUPERADMIN"):
+        return None
+
+    abort(403)
+
+
 def _aplicar_seguridad_por_rol(query):
-    """PROFESOR ve solo su sucursal; ADMIN ve todo."""
+    """
+    Aplica aislamiento multitenant a consultas que incluyen Alumno.
+
+    ADMIN:
+        toda su academia.
+
+    PROFESOR:
+        su academia y su sucursal.
+
+    SUPERADMIN global:
+        sin filtro de academia.
+    """
+    academia_id = _academia_id_actual()
+
+    if academia_id is not None:
+        query = query.filter(
+            Alumno.academia_id == academia_id
+        )
+
     if current_user.has_role("PROFESOR"):
-        query = query.filter(Alumno.sucursal_id == current_user.sucursal_id)
+        query = query.filter(
+            Alumno.sucursal_id
+            == current_user.sucursal_id
+        )
+
     return query
+
+
+def _sucursales_disponibles():
+    """
+    Devuelve únicamente las sucursales visibles
+    para el usuario autenticado.
+    """
+    academia_id = _academia_id_actual()
+
+    query = Sucursal.query.filter_by(
+        activo=True
+    )
+
+    if academia_id is not None:
+        query = query.filter(
+            Sucursal.academia_id == academia_id
+        )
+
+    if current_user.has_role("PROFESOR"):
+        query = query.filter(
+            Sucursal.id
+            == current_user.sucursal_id
+        )
+
+    return (
+        query
+        .order_by(Sucursal.nombre.asc())
+        .all()
+    )
+
+def _torneo_visible_o_404(torneo_id):
+    academia_id = _academia_id_actual()
+
+    query = Torneo.query.filter_by(
+        id=torneo_id,
+    )
+
+    if academia_id is not None:
+        query = query.filter_by(
+            academia_id=academia_id,
+        )
+
+    return query.first_or_404()
+
+
+def _torneos_disponibles():
+    academia_id = _academia_id_actual()
+
+    query = Torneo.query
+
+    if academia_id is not None:
+        query = query.filter(
+            Torneo.academia_id == academia_id
+        )
+
+    return (
+        query
+        .order_by(Torneo.fecha.desc())
+        .all()
+    )
+
+
+def _grados_disponibles():
+    academia_id = _academia_id_actual()
+
+    query = Grado.query.filter_by(
+        activo=True
+    )
+
+    if academia_id is not None:
+        query = query.filter(
+            Grado.academia_id == academia_id
+        )
+
+    return (
+        query
+        .order_by(Grado.orden.asc())
+        .all()
+    )
 
 def get_reporte_morosidad(fecha_corte: date, sucursal_id=None, activo=True, solo_morosos=True):
     periodo_corte = _periodo_yyyymm(fecha_corte)
@@ -116,7 +252,7 @@ def get_reporte_morosidad(fecha_corte: date, sucursal_id=None, activo=True, solo
         .join(Sucursal, Alumno.sucursal_id == Sucursal.id)
         .outerjoin(sub_ult, sub_ult.c.alumno_id == Alumno.id)
     )
-
+    q = _aplicar_seguridad_por_rol(q)
     if hasattr(Alumno, "activo") and activo is not None:
         q = q.filter(Alumno.activo == bool(activo))
 
@@ -189,12 +325,9 @@ def index():
     filas = q.all()
 
     # combos
-    if current_user.has_role("PROFESOR"):
-        sucursales = Sucursal.query.filter_by(id=current_user.sucursal_id).all()
-    else:
-        sucursales = Sucursal.query.filter_by(activo=True).order_by(Sucursal.nombre).all()
+    sucursales = _sucursales_disponibles()
 
-    grados = Grado.query.filter_by(activo=True).order_by(Grado.orden).all()
+    grados = _grados_disponibles()
 
     # Para pintar la tabla: convertimos a dicts
     resultados = []
@@ -326,10 +459,7 @@ def combate():
     q = q.order_by(Sucursal.nombre.asc(), Alumno.apellidos.asc(), Alumno.nombres.asc())
     filas = q.all()
 
-    if current_user.has_role("PROFESOR"):
-        sucursales = Sucursal.query.filter_by(id=current_user.sucursal_id).all()
-    else:
-        sucursales = Sucursal.query.filter_by(activo=True).order_by(Sucursal.nombre).all()
+    sucursales = _sucursales_disponibles()
 
     resultados = []
     for alumno, sucursal, grado in filas:
@@ -399,12 +529,9 @@ def poomsae():
     q = q.order_by(Sucursal.nombre.asc(), Alumno.apellidos.asc(), Alumno.nombres.asc())
     filas = q.all()
 
-    if current_user.has_role("PROFESOR"):
-        sucursales = Sucursal.query.filter_by(id=current_user.sucursal_id).all()
-    else:
-        sucursales = Sucursal.query.filter_by(activo=True).order_by(Sucursal.nombre).all()
+    sucursales = _sucursales_disponibles()
 
-    grados = Grado.query.filter_by(activo=True).order_by(Grado.orden).all()
+    grados = _grados_disponibles()
 
     resultados = []
     for alumno, sucursal, grado in filas:
@@ -641,139 +768,293 @@ def _calc_valores_evento(torneo: Torneo, modalidad_raw: str):
     mitad = round(ambas / 2.0, 2)
     return {"POOMSAE": mitad, "COMBATE": round(ambas - mitad, 2)}
 
-@reportes_bp.route("/torneo/<int:torneo_id>/seleccionar", methods=["GET", "POST"])
+@reportes_bp.route(
+    "/torneo/<int:torneo_id>/seleccionar",
+    methods=["GET", "POST"],
+)
 @login_required
 def seleccionar_competidores(torneo_id):
-    torneo = Torneo.query.get_or_404(torneo_id)
+    torneo = _torneo_visible_o_404(torneo_id)
 
     # =========================
     # SUCURSALES DISPONIBLES
     # =========================
     if current_user.has_role("PROFESOR"):
         sucursal_id = current_user.sucursal_id
-        sucursales = Sucursal.query.filter_by(id=current_user.sucursal_id).all()
     else:
-        sucursal_id = request.values.get("sucursal_id", type=int)
-        sucursales = Sucursal.query.filter_by(activo=True).order_by(Sucursal.nombre).all()
+        sucursal_id = request.values.get(
+            "sucursal_id",
+            type=int,
+        )
+
+    sucursales = _sucursales_disponibles()
+
+    # Evitar que un usuario fuerce una sucursal
+    # que no pertenece a su ámbito visible.
+    sucursales_ids = {
+        sucursal.id
+        for sucursal in sucursales
+    }
+
+    if (
+        sucursal_id
+        and sucursal_id not in sucursales_ids
+    ):
+        sucursal_id = None
 
     # =========================
     # ALUMNOS FILTRADOS
     # =========================
-    q = Alumno.query.filter_by(activo=True)
+    q = Alumno.query.filter_by(
+        activo=True
+    )
 
-    if current_user.has_role("PROFESOR"):
-        q = q.filter(Alumno.sucursal_id == current_user.sucursal_id)
-    elif sucursal_id:
-        q = q.filter(Alumno.sucursal_id == sucursal_id)
+    q = _aplicar_seguridad_por_rol(q)
 
-    alumnos = q.order_by(Alumno.apellidos, Alumno.nombres).all()
+    if (
+        not current_user.has_role("PROFESOR")
+        and sucursal_id
+    ):
+        q = q.filter(
+            Alumno.sucursal_id == sucursal_id
+        )
+
+    alumnos = (
+        q
+        .order_by(
+            Alumno.apellidos,
+            Alumno.nombres,
+        )
+        .all()
+    )
 
     # =========================
-    # MAPA DE CATEGORÍAS SUGERIDAS
+    # MAPA DE CATEGORÍAS
     # =========================
     categorias_map = {}
-    for a in alumnos:
-        combate_eval, combate_msg = obtener_categoria_competencia(a, torneo, "COMBATE")
-        poomsae_eval, _ = obtener_categoria_competencia(a, torneo, "POOMSAE")
 
-        categorias_map[a.id] = {
+    for alumno in alumnos:
+        combate_eval, _ = (
+            obtener_categoria_competencia(
+                alumno,
+                torneo,
+                "COMBATE",
+            )
+        )
+
+        poomsae_eval, _ = (
+            obtener_categoria_competencia(
+                alumno,
+                torneo,
+                "POOMSAE",
+            )
+        )
+
+        categorias_map[alumno.id] = {
             "combate": combate_eval,
             "poomsae": poomsae_eval,
-            "edad": calcular_edad(a.fecha_nacimiento),
-            "peso": float(a.peso) if a.peso is not None else None,
-            "grado": a.grado.nombre if a.grado else None,
+            "edad": calcular_edad(
+                alumno.fecha_nacimiento
+            ),
+            "peso": (
+                float(alumno.peso)
+                if alumno.peso is not None
+                else None
+            ),
+            "grado": (
+                alumno.grado.nombre
+                if alumno.grado
+                else None
+            ),
         }
 
     # =========================
     # SELECCIONES EXISTENTES
     # =========================
-    existentes_q = Participacion.query.filter_by(torneo_id=torneo.id)
-
-    if current_user.has_role("PROFESOR"):
-        existentes_q = (
-            existentes_q.join(Alumno, Alumno.id == Participacion.alumno_id)
-            .filter(Alumno.sucursal_id == current_user.sucursal_id)
+    existentes_q = (
+        Participacion.query
+        .join(
+            Alumno,
+            Alumno.id
+            == Participacion.alumno_id,
         )
-    elif sucursal_id:
-        existentes_q = (
-            existentes_q.join(Alumno, Alumno.id == Participacion.alumno_id)
-            .filter(Alumno.sucursal_id == sucursal_id)
+        .filter(
+            Participacion.torneo_id
+            == torneo.id
+        )
+    )
+
+    existentes_q = _aplicar_seguridad_por_rol(
+        existentes_q
+    )
+
+    if (
+        not current_user.has_role("PROFESOR")
+        and sucursal_id
+    ):
+        existentes_q = existentes_q.filter(
+            Alumno.sucursal_id == sucursal_id
         )
 
     existentes = existentes_q.all()
 
     mapa = {}
-    for p in existentes:
-        mapa.setdefault(p.alumno_id, set()).add(p.modalidad)
+
+    for participacion in existentes:
+        mapa.setdefault(
+            participacion.alumno_id,
+            set(),
+        ).add(
+            participacion.modalidad
+        )
 
     # =========================
     # GUARDAR SELECCIÓN
     # =========================
     if request.method == "POST":
-        seleccionados = set(map(int, request.form.getlist("alumno_ids[]")))
+        seleccionados = set(
+            map(
+                int,
+                request.form.getlist(
+                    "alumno_ids[]"
+                ),
+            )
+        )
 
-        # borrar participaciones solo del conjunto visible/filtrado
-        alumnos_ids_visibles = [a.id for a in alumnos]
+        alumnos_ids_visibles = {
+            alumno.id
+            for alumno in alumnos
+        }
 
-        if alumnos_ids_visibles:
+        # Un POST manipulado no puede incorporar
+        # alumnos invisibles para este tenant.
+        seleccionados &= alumnos_ids_visibles
+
+        alumnos_ids_visibles_lista = list(
+            alumnos_ids_visibles
+        )
+
+        # Eliminar únicamente participaciones
+        # pertenecientes al conjunto visible.
+        if alumnos_ids_visibles_lista:
+            delete_query = (
+                Participacion.query
+                .filter(
+                    Participacion.torneo_id
+                    == torneo.id
+                )
+                .filter(
+                    Participacion.alumno_id.in_(
+                        alumnos_ids_visibles_lista
+                    )
+                )
+            )
+
             if seleccionados:
-                (
-                    Participacion.query
-                    .filter(Participacion.torneo_id == torneo.id)
-                    .filter(Participacion.alumno_id.in_(alumnos_ids_visibles))
-                    .filter(~Participacion.alumno_id.in_(seleccionados))
-                    .delete(synchronize_session=False)
-                )
-            else:
-                (
-                    Participacion.query
-                    .filter(Participacion.torneo_id == torneo.id)
-                    .filter(Participacion.alumno_id.in_(alumnos_ids_visibles))
-                    .delete(synchronize_session=False)
+                delete_query = delete_query.filter(
+                    ~Participacion.alumno_id.in_(
+                        seleccionados
+                    )
                 )
 
-        for a in alumnos:
-            if a.id not in seleccionados:
+            delete_query.delete(
+                synchronize_session=False
+            )
+
+        for alumno in alumnos:
+            if alumno.id not in seleccionados:
                 continue
 
-            modalidad_raw = (request.form.get(f"modalidad_{a.id}") or "POOMSAE").upper().strip()
-            if modalidad_raw not in ("POOMSAE", "COMBATE", "AMBAS"):
+            modalidad_raw = (
+                request.form.get(
+                    f"modalidad_{alumno.id}"
+                )
+                or "POOMSAE"
+            ).upper().strip()
+
+            if modalidad_raw not in (
+                "POOMSAE",
+                "COMBATE",
+                "AMBAS",
+            ):
                 modalidad_raw = "POOMSAE"
 
-            valores = _calc_valores_evento(torneo, modalidad_raw)
-            modalidades = list(valores.keys())
+            valores = _calc_valores_evento(
+                torneo,
+                modalidad_raw,
+            )
 
-            for mod in modalidades:
-                categoria = obtener_categoria_competencia(alumno=a, torneo=torneo, modalidad=mod)
+            for modalidad, valor in valores.items():
+                categoria = (
+                    obtener_categoria_competencia(
+                        alumno=alumno,
+                        torneo=torneo,
+                        modalidad=modalidad,
+                    )
+                )
+
                 if not categoria:
-                    flash(f"No se encontró categoría válida para {a.apellidos} {a.nombres} ({mod}).", "danger")
-                    db.session.rollback()
-                    return redirect(url_for(
-                        "reportes.seleccionar_competidores",
-                        torneo_id=torneo.id,
-                        sucursal_id=sucursal_id
-                    ))
+                    flash(
+                        (
+                            "No se encontró categoría válida "
+                            f"para {alumno.apellidos} "
+                            f"{alumno.nombres} "
+                            f"({modalidad})."
+                        ),
+                        "danger",
+                    )
 
-                p = (
+                    db.session.rollback()
+
+                    return redirect(
+                        url_for(
+                            "reportes.seleccionar_competidores",
+                            torneo_id=torneo.id,
+                            sucursal_id=sucursal_id,
+                        )
+                    )
+
+                participacion = (
                     Participacion.query
-                    .filter_by(torneo_id=torneo.id, alumno_id=a.id, modalidad=mod)
+                    .filter_by(
+                        torneo_id=torneo.id,
+                        alumno_id=alumno.id,
+                        modalidad=modalidad,
+                    )
                     .first()
                 )
 
-                if not p:
-                    p = Participacion(torneo_id=torneo.id, alumno_id=a.id, modalidad=mod)
-                    db.session.add(p)
+                if not participacion:
+                    participacion = Participacion(
+                        torneo_id=torneo.id,
+                        alumno_id=alumno.id,
+                        modalidad=modalidad,
+                    )
 
-                p.categoria_id = categoria.id
-                p.valor_evento = valores[mod]
+                    db.session.add(
+                        participacion
+                    )
+
+                participacion.categoria_id = (
+                    categoria.id
+                )
+
+                participacion.valor_evento = valor
 
         db.session.commit()
-        flash("Selección guardada correctamente.", "success")
-        return redirect(url_for(
-            "reportes.seleccionar_competidores",
-            torneo_id=torneo.id,
-            sucursal_id=sucursal_id
-        ))
+
+        flash(
+            "Selección guardada correctamente.",
+            "success",
+        )
+
+        return redirect(
+            url_for(
+                "reportes.seleccionar_competidores",
+                torneo_id=torneo.id,
+                sucursal_id=sucursal_id,
+            )
+        )
 
     return render_template(
         "reportes/seleccionar_competidores.html",
@@ -782,63 +1063,122 @@ def seleccionar_competidores(torneo_id):
         mapa=mapa,
         categorias_map=categorias_map,
         sucursales=sucursales,
-        sucursal_id=sucursal_id
+        sucursal_id=sucursal_id,
     )
 
-
-@reportes_bp.route("/torneo/<int:torneo_id>/seleccion.xlsx", methods=["GET"])
+@reportes_bp.route(
+    "/torneo/<int:torneo_id>/seleccion.xlsx",
+    methods=["GET"],
+)
 @login_required
 def torneo_seleccion_xlsx(torneo_id):
-    torneo = Torneo.query.get_or_404(torneo_id)
-
-    q = (
-        db.session.query(Participacion, Alumno, Sucursal, CategoriaCompetencia)
-        .join(Alumno, Alumno.id == Participacion.alumno_id)
-        .join(Sucursal, Sucursal.id == Alumno.sucursal_id)
-        .join(CategoriaCompetencia, CategoriaCompetencia.id == Participacion.categoria_id)
-        .filter(Participacion.torneo_id == torneo.id)
-        .order_by(Sucursal.nombre, Alumno.apellidos, Alumno.nombres, Participacion.modalidad)
+    torneo = _torneo_visible_o_404(
+        torneo_id
     )
 
-    if current_user.has_role("PROFESOR"):
-        q = q.filter(Alumno.sucursal_id == current_user.sucursal_id)
+    q = (
+        db.session.query(
+            Participacion,
+            Alumno,
+            Sucursal,
+            CategoriaCompetencia,
+        )
+        .join(
+            Alumno,
+            Alumno.id == Participacion.alumno_id,
+        )
+        .join(
+            Sucursal,
+            Sucursal.id == Alumno.sucursal_id,
+        )
+        .join(
+            CategoriaCompetencia,
+            CategoriaCompetencia.id
+            == Participacion.categoria_id,
+        )
+        .filter(
+            Participacion.torneo_id == torneo.id
+        )
+        .order_by(
+            Sucursal.nombre,
+            Alumno.apellidos,
+            Alumno.nombres,
+            Participacion.modalidad,
+        )
+    )
+
+    q = _aplicar_seguridad_por_rol(q)
 
     rows = q.all()
 
     data = []
+
     for p, a, s, cat in rows:
-        data.append({
-            "Identificación": a.numero_identidad or a.id,
-            "Alumno": f"{a.apellidos} {a.nombres}",
-            "Género": a.genero,
-            "Sucursal": s.nombre,
-            "Modalidad": p.modalidad,
-            "Categoría": cat.nombre,
-            "Valor evento": float(p.valor_evento or 0),
-            "Pagado": "SI" if p.pagado_evento else "NO",
-            "Fecha pago": str(p.fecha_pago_evento or ""),
-            "Método pago": p.metodo_pago_evento or ""
-        })
+        data.append(
+            {
+                "Identificación": (
+                    a.numero_identidad or a.id
+                ),
+                "Alumno": (
+                    f"{a.apellidos} {a.nombres}"
+                ),
+                "Género": a.genero,
+                "Sucursal": s.nombre,
+                "Modalidad": p.modalidad,
+                "Categoría": cat.nombre,
+                "Valor evento": float(
+                    p.valor_evento or 0
+                ),
+                "Pagado": (
+                    "SI"
+                    if p.pagado_evento
+                    else "NO"
+                ),
+                "Fecha pago": str(
+                    p.fecha_pago_evento or ""
+                ),
+                "Método pago": (
+                    p.metodo_pago_evento or ""
+                ),
+            }
+        )
 
     df = pd.DataFrame(data)
 
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Seleccion")
+
+    with pd.ExcelWriter(
+        output,
+        engine="openpyxl",
+    ) as writer:
+        df.to_excel(
+            writer,
+            index=False,
+            sheet_name="Seleccion",
+        )
 
     output.seek(0)
-    filename = f"seleccion_{torneo.nombre}_{torneo.fecha}.xlsx".replace(" ", "_")
+
+    filename = (
+        f"seleccion_{torneo.nombre}_{torneo.fecha}.xlsx"
+        .replace(" ", "_")
+    )
+
     return send_file(
         output,
         as_attachment=True,
         download_name=filename,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        mimetype=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
     )
+
 
 @reportes_bp.route("/seleccion", methods=["GET", "POST"])
 @login_required
 def seleccion_torneo():
-    torneos = Torneo.query.order_by(Torneo.fecha.desc()).all()
+    torneos = _torneos_disponibles()
 
     if request.method == "POST":
         torneo_id = request.form.get("torneo_id")
